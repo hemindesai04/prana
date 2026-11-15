@@ -228,3 +228,73 @@ def test_payload_size_limit_returns_413(client):
         json={"data": {}},
     )
     assert resp.status_code == 413
+
+
+def test_oura_ble_ingest_contract_sos_and_reprocess(client, db_conn):
+    payload = {
+        "device": "Oura Ring 4",
+        "events": [
+            {"event_type": "hrv", "timestamp": "2026-11-14T06:10:00+00:00", "rmssd": 51.2},
+            {"event_type": "spo2", "timestamp": "2026-11-14T06:15:00+00:00", "spo2": 98.5},
+        ],
+    }
+    r = client.post(
+        "/api/v1/ingest/oura",
+        headers={"X-Ingest-Token": "hemin-secret"},
+        json=payload,
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+    assert r.json()["points_processed"] == 2
+
+    # Duplicate payload is skipped
+    r_dup = client.post(
+        "/api/v1/ingest/oura",
+        headers={"X-Ingest-Token": "hemin-secret"},
+        json=payload,
+    )
+    assert r_dup.status_code == 200
+    assert r_dup.json()["status"] == "duplicate"
+
+    # Bad shape triggers SOS and failed raw_ingestion, recoverable via reprocess
+    r_bad = client.post(
+        "/api/v1/ingest/oura",
+        headers={"X-Ingest-Token": "hemin-secret"},
+        json={"unexpected": "shape"},
+    )
+    assert r_bad.status_code == 200
+    assert r_bad.json()["status"] == "partial_sos"
+    assert r_bad.json()["sos_count"] == 1
+    raw_id = r_bad.json()["raw_ingestion_id"]
+
+    with db_conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE raw_ingestions
+            SET payload = '{"device": "Oura Ring 4", "events": [{"event_type": "resting_heart_rate", "timestamp": "2026-11-14T06:20:00+00:00", "rhr": 49}]}'::jsonb
+            WHERE id = %s
+            """,
+            (raw_id,),
+        )
+    db_conn.commit()
+
+    rep = client.post(
+        "/api/v1/admin/reprocess",
+        headers={"X-Admin-Token": "admin-secret"},
+        json={"raw_ingestion_id": raw_id},
+    )
+    assert rep.status_code == 200
+    assert rep.json()["reprocessed_count"] == 1
+    assert rep.json()["results"][0]["points_processed"] == 1
+    assert rep.json()["results"][0]["sos_count"] == 0
+
+    stats = client.get(
+        "/api/v1/stats?source=oura_ble",
+        headers={"X-Ingest-Token": "hemin-secret"},
+    )
+    assert stats.status_code == 200
+    metrics = {b["metric_name"]: b for b in stats.json()["biomarkers"]}
+    assert metrics["hrv_rmssd"]["canonical_metric"] == "hrv_rmssd"
+    assert metrics["hrv_rmssd"]["device"] == "Oura Ring 4"
+    assert metrics["spo2"]["canonical_metric"] == "spo2"
+    assert metrics["resting_heart_rate"]["canonical_metric"] == "resting_heart_rate"

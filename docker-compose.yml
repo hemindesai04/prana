@@ -81,6 +81,25 @@ services:
       PRANA_RO_DATABASE_URL: ${PRANA_RO_DATABASE_URL:-}
     volumes:
       - ./tests:/tests:ro
+      - ./oura-ble:/oura-ble:ro
+
+  oura-ble:
+    build: ./oura-ble
+    container_name: prana-oura-ble
+    profiles: ["oura"]
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 256m
+    logging: *default-logging
+    environment:
+      PRANA_INGEST_URL: http://localhost:9000/api/v1/ingest/oura
+      OURA_INGEST_TOKEN: ${OURA_INGEST_TOKEN:-}
+      OURA_DEVICE_NAME: ${OURA_DEVICE_NAME:-Oura Ring 4}
+      OURA_SYNC_INTERVAL_SEC: ${OURA_SYNC_INTERVAL_SEC:-3600}
+    volumes:
+      - /var/run/dbus:/var/run/dbus
+      - oura_data:/data
 
 volumes:
   pgdata:
+  oura_data:

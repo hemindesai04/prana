@@ -17,8 +17,9 @@ cp .env.example .env
 
 Edit `.env` with strong secrets:
 - `POSTGRES_PASSWORD`: Strong database password
-- `ADMIN_TOKEN`: Token for creating additional household users via `POST /api/v1/users`
+- `ADMIN_TOKEN`: Token for creating additional household users via `POST /api/v1/users` and reprocessing via `POST /api/v1/admin/reprocess`
 - `BOOTSTRAP_USERS`: Comma-separated `slug:token` pairs created automatically on startup (e.g. `hemin:super_secret_token_1,alex:super_secret_token_2`)
+- `OURA_INGEST_TOKEN`: User ingest token (from `BOOTSTRAP_USERS`) used by the `oura-ble` service when posting to `POST /api/v1/ingest/oura`
 
 ### 2. Start the 2-Container Stack
 ```bash
@@ -40,6 +41,20 @@ curl http://localhost:9000/health
 3. Trigger a manual sync and verify data landed:
 ```bash
 curl -H "X-Ingest-Token: <your user token>" http://localhost:9000/api/v1/stats
+```
+
+### 4. Connect Oura Ring 4 (Local BLE, No Subscription)
+1. Place the Oura Ring 4 on its charger (blinking blue pairing mode) near the Pi and pair it once:
+```bash
+docker compose --profile oura run --rm oura-ble oura --key-file /data/key.hex pair
+```
+2. Start the hourly `oura-ble` sync service (`POST /api/v1/ingest/oura`):
+```bash
+docker compose --profile oura up -d --build oura-ble
+```
+3. Verify Oura ingestion:
+```bash
+curl -H "X-Ingest-Token: <your user token>" "http://localhost:9000/api/v1/stats?source=oura_ble"
 ```
 
 ---

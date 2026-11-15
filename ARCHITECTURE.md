@@ -6,20 +6,20 @@
 - **Multi-User:** Household-ready from Day 1 (`user_id` scoping + per-user `X-Ingest-Token`).
 - **No Oura Subscription:** Oura Ring 4 data is extracted locally over BLE (no Oura Cloud API v2).
 - **No iOS Developer Account:** Apple Watch Series 8 data is pushed via the App Store app **Health Auto Export**.
-- **Port Series:** `9xxx` (`9000` for ingestor API, `9300` for Grafana in Phase 4) to avoid `8xxx` collisions (e.g., Home Assistant).
-- **Local-First Edge:** Starts on LAN (`http://<PI_IP>:9000`), later exposed via `cloudflared` tunnel when a custom domain is attached.
+- **Port Series:** `9xxx` (`9000` for ingestor API, `9300` reserved for Grafana) to avoid `8xxx` collisions (e.g., Home Assistant).
+- **Local-First Edge:** Runs on LAN (`http://<PI_IP>:9000`) and can be exposed over HTTPS via `cloudflared` tunnel when a custom domain is attached.
 
 ---
 
-## 2. Container Topology (Optimized 2-Core-Container Design)
+## 2. Container Topology
 
-| Service | Image | Purpose | Phase |
-| :--- | :--- | :--- | :--- |
-| `db` | `postgres:18.7-alpine` | Primary multi-user PostgreSQL 18 database (`pgdata` volume) | 1A |
-| `prana` | `./app` (`python:3.12-slim-bookworm`, UID 1000) | FastAPI ingestor (`:9000`), Alembic auto-migrations, APScheduler (nightly `pg_dump -Fc` backups; later AI analyzer & notifier) | 1A |
-| `oura-ble` | Profile `oura` | Local BLE sync (`Th0rgal/open_oura` or `LogosIsLife/open_ring`) via host D-Bus, pushing to `prana` | 1B |
-| `cloudflared` | Profile `tunnel` | Cloudflare Tunnel (`https://ingest.<domain>` → `http://prana:9000`) | 2 |
-| `grafana` | Profile `dashboard` (`:9300`) | Read-only SQL dashboards | 4 |
+| Service | Image | Purpose |
+| :--- | :--- | :--- |
+| `db` | `postgres:18.7-alpine` | Primary multi-user PostgreSQL 18 database (`pgdata` volume) |
+| `prana` | `./app` (`python:3.12-slim-bookworm`, UID 1000) | FastAPI ingestor (`:9000`), Alembic auto-migrations, APScheduler (nightly `pg_dump -Fc` backups, analysis, notifications) |
+| `oura-ble` | `./oura-ble` (Profile `oura`) | Local BLE sync (`Th0rgal/open_oura`) via host D-Bus (`/var/run/dbus`), syncing hourly to `prana` |
+| `cloudflared` | Profile `tunnel` | Cloudflare Tunnel (`https://ingest.<domain>` → `http://prana:9000`) |
+| `grafana` | Profile `dashboard` (`:9300`) | Read-only SQL dashboards (`prana_ro` role) |
 
 ---
 
@@ -27,7 +27,7 @@
 
 ### Module 1: Source Connectors (External / Plug-and-Play)
 - **Apple Watch 8:** `Health Auto Export` (iOS) → `POST /api/v1/ingest/apple-health`
-- **Oura Ring 4:** `open_oura` / `open_ring` (Pi 4 BLE) → `POST /api/v1/ingest/points`
+- **Oura Ring 4:** `open_oura` (Pi 4 BLE, hourly) → `POST /api/v1/ingest/oura`
 - **Future (Whoop / Ultrahuman):** Standalone puller scripts → `POST /api/v1/ingest/points`
 
 ### Module 2: Ingestion & Normalization Gateway (`app/prana/ingestor/`)
@@ -50,6 +50,8 @@ erDiagram
     users ||--o{ raw_ingestions : "owns (ON DELETE CASCADE)"
     users ||--o{ biomarkers : "owns (ON DELETE CASCADE)"
     users ||--o{ workouts : "owns (ON DELETE CASCADE)"
+    users ||--o{ ingestion_issues : "owns (ON DELETE CASCADE)"
+    raw_ingestions ||--o{ ingestion_issues : "links (ON DELETE SET NULL)"
 
     users {
         bigserial id PK
@@ -65,7 +67,11 @@ erDiagram
         bigserial id PK
         bigint user_id FK
         text source "apple_health | oura_ble | whoop | ultrahuman"
+        text payload_sha256
+        text status "received | processed | failed"
         timestamptz received_at
+        timestamptz processed_at
+        text error
         jsonb payload "Immutable raw JSONB"
     }
 
@@ -73,7 +79,9 @@ erDiagram
         bigserial id PK
         bigint user_id FK
         text source
+        text device
         text metric_name
+        text canonical_metric
         timestamptz recorded_at
         double value
         double value_min
@@ -87,6 +95,7 @@ erDiagram
         bigserial id PK
         bigint user_id FK
         text source
+        text device
         text workout_type
         timestamptz started_at
         timestamptz ended_at
@@ -94,6 +103,30 @@ erDiagram
         double calories
         jsonb metadata
         timestamptz created_at
+    }
+
+    ingestion_issues {
+        bigserial id PK
+        bigint user_id FK
+        bigint raw_ingestion_id FK
+        text source
+        text severity "sos | warning"
+        text issue_type
+        text metric_name
+        text message
+        jsonb details
+        timestamptz created_at
+        timestamptz resolved_at
+    }
+
+    backup_runs {
+        bigserial id PK
+        timestamptz started_at
+        timestamptz finished_at
+        text status "running | success | failed"
+        text file_path
+        bigint size_bytes
+        text error
     }
 ```
 
@@ -116,7 +149,7 @@ erDiagram
 - Every module logs structured JSON (`timestamp`, `level`, `logger`, `message`, plus contextual fields) to `stdout`.
 - `docker-compose.yml` enforces `json-file` log rotation (`max-size: 10m`, `max-file: 5`) on all containers.
 
-### Module 6: Analysis, AI & Notifications *(Phase 3)*
+### Module 6: Analysis, AI & Notifications
 - Runs as a scheduled job inside `prana`:
   1. Deterministic stats per `user_id` (7d vs 30d baselines, z-scores, cross-device divergence, lag correlations).
   2. Off-the-shelf LLM synthesis on detected anomalies.

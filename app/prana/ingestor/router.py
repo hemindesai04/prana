@@ -11,6 +11,7 @@ from prana.ingestor.apple_health import (
     normalize_and_store_apple_health,
     store_apple_health_payload,
 )
+from prana.ingestor.oura import normalize_and_store_oura, store_oura_payload
 from prana.ingestor.points import GenericIngestPayload, store_generic_points
 from prana.logging_setup import get_logger
 from prana.migrations import get_migration_status
@@ -294,6 +295,25 @@ def ingest_apple_health(
     return {"user_id": user_id, **result}
 
 
+@router.post("/api/v1/ingest/oura")
+def ingest_oura(
+    payload: Dict[str, Any],
+    conn: Any = Depends(get_db_conn),
+    user: Tuple[int, str] = Depends(require_user),
+) -> Dict[str, Any]:
+    user_id, user_tz = user
+    result = store_oura_payload(conn, user_id, payload, user_tz=user_tz)
+    logger.info(
+        "Ingested oura_ble status=%s points=%d sos=%d warnings=%d",
+        result["status"],
+        result["points_processed"],
+        result["sos_count"],
+        result["warning_count"],
+        extra={"user_id": user_id, "source": "oura_ble"},
+    )
+    return {"user_id": user_id, **result}
+
+
 @router.post("/api/v1/ingest/points")
 def ingest_points(
     payload: GenericIngestPayload,
@@ -345,7 +365,7 @@ def reprocess_raw_ingestions(
 
     reprocessed: List[Dict[str, Any]] = []
     for raw_id, uid, source, payload, user_tz in rows:
-        if source != "apple_health":
+        if source not in ("apple_health", "oura_ble"):
             continue
         with conn.cursor() as cur:
             cur.execute(
@@ -353,18 +373,33 @@ def reprocess_raw_ingestions(
                 (raw_id,),
             )
         conn.commit()
-        metrics_c, workouts_c, sos_c, warn_c = normalize_and_store_apple_health(
-            conn, int(uid), int(raw_id), payload, user_tz=str(user_tz)
-        )
-        reprocessed.append(
-            {
-                "raw_ingestion_id": raw_id,
-                "metrics_processed": metrics_c,
-                "workouts_processed": workouts_c,
-                "sos_count": sos_c,
-                "warning_count": warn_c,
-            }
-        )
+        if source == "apple_health":
+            metrics_c, workouts_c, sos_c, warn_c = normalize_and_store_apple_health(
+                conn, int(uid), int(raw_id), payload, user_tz=str(user_tz)
+            )
+            reprocessed.append(
+                {
+                    "raw_ingestion_id": raw_id,
+                    "source": source,
+                    "metrics_processed": metrics_c,
+                    "workouts_processed": workouts_c,
+                    "sos_count": sos_c,
+                    "warning_count": warn_c,
+                }
+            )
+        else:
+            points_c, sos_c, warn_c = normalize_and_store_oura(
+                conn, int(uid), int(raw_id), payload, user_tz=str(user_tz)
+            )
+            reprocessed.append(
+                {
+                    "raw_ingestion_id": raw_id,
+                    "source": source,
+                    "points_processed": points_c,
+                    "sos_count": sos_c,
+                    "warning_count": warn_c,
+                }
+            )
     return {"status": "ok", "reprocessed_count": len(reprocessed), "results": reprocessed}
 
 

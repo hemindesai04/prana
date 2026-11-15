@@ -24,6 +24,7 @@ For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.
 - `app/prana/models.py` & `app/alembic/` — SQLAlchemy 2.0 models and Alembic migrations (`users`, `raw_ingestions`, `biomarkers`, `workouts`, `ingestion_issues`, `backup_runs`), auto-upgraded on startup.
 - `db/init/01_roles.sql` — Creates the read-only `prana_ro` role for smoke tests and future dashboards.
 - `app/prana/ingestor/` — HTTP routes, canonical metric registry, raw-first storage, & payload parsers (connectors talk to `prana` **only** via `/api/v1/ingest/*`).
+- `oura-ble/` — Containerized Oura Ring 4 BLE sync service (`--profile oura`, `Th0rgal/open_oura` + hourly `sync.py` posting to `/api/v1/ingest/oura`).
 - `app/prana/maintenance/` — Containerized scheduled `pg_dump -Fc` backups (`/backups`) and `pg_restore` helper.
 - `app/prana/logging_setup.py` — Structured JSON logger (`get_logger(__name__)`) to `stdout`.
 - `tests/` — Unit (`test_unit_*.py`), Postgres 18.7 integration (`test_flow_*.py`), and optional `prana_ro` read-only prod smoke tests (`test_prod_ro_smoke.py`).
@@ -38,7 +39,7 @@ For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.
 - **Port series `9xxx`:** `9000` = API, `9300` = future Grafana. Port `8xxx` is reserved (e.g., Home Assistant).
 - **Schema changes:** Always add an additive Alembic migration in `app/alembic/versions/` matching `app/prana/models.py`. Never edit applied migrations destructively.
 - **Single-worker requirement:** APScheduler runs in-process; never launch uvicorn with `--workers > 1`.
-- **Documentation sync:** Update `ARCHITECTURE.md` and `README.md` in the same change if you alter endpoints, ports, or tables.
+- **Documentation sync:** For every change, review and update all affected docs in the same change (`ARCHITECTURE.md` for technical architecture, endpoints, ports, services, and schema—never add phase or implementation roadmap details to `ARCHITECTURE.md`; `README.md` for setup/usage/endpoints; `IMPLEMENTATION.md` for phase status; `AGENTS.md` for conventions).
 
 ---
 
@@ -57,3 +58,4 @@ Before finishing any change:
 1. Write or update **both unit tests and flow tests** covering the scope of your change.
 2. Run `docker compose --profile test run --rm tests && docker compose --profile test rm -s -f db-test` (or `PYTHONPATH=app .venv/bin/pytest -v tests` if running locally) and observe **all tests passing**.
 3. If `docker-compose.yml` or `Dockerfile` changed, run `docker compose config -q` (on a Docker-enabled host).
+4. Review and update `ARCHITECTURE.md` (technical details only, no phases), `README.md`, `IMPLEMENTATION.md`, and `AGENTS.md` as needed so documentation matches the final code.

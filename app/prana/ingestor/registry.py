@@ -24,10 +24,12 @@ CANONICAL_METRICS: Dict[Tuple[str, str], Tuple[str, str]] = {
     ("oura_ble", "hrv"): ("hrv_rmssd", "ms"),
     ("oura_ble", "hrv_rmssd"): ("hrv_rmssd", "ms"),
     ("oura_ble", "spo2"): ("spo2", "%"),
+    ("oura_ble", "skin_temperature"): ("skin_temperature", "degC"),
     ("oura_ble", "skin_temperature_delta"): ("skin_temperature_delta", "degC"),
     ("oura_ble", "temperature_delta"): ("skin_temperature_delta", "degC"),
     ("oura_ble", "sleep_duration"): ("sleep_duration", "hr"),
     ("oura_ble", "steps"): ("steps", "count"),
+    ("oura_ble", "activity_met"): ("activity_met", "MET"),
 }
 
 
