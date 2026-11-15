@@ -31,7 +31,8 @@ def db_conn(migrated_db: str) -> Iterator[psycopg.Connection]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                TRUNCATE users, raw_ingestions, biomarkers, workouts, ingestion_issues, backup_runs
+                TRUNCATE users, raw_ingestions, biomarkers, workouts, ingestion_issues, backup_runs,
+                         daily_metrics, insights, briefings
                 RESTART IDENTITY CASCADE
                 """
             )

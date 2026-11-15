@@ -25,6 +25,10 @@ IGNORED_OURA_EVENT_TYPES = {
     "scan_end",
     "motion_event",
     "motion_period",
+    "sleep_acm_period",
+    "alert_event",
+    "rtc_beacon",
+    "user_information",
 }
 
 KNOWN_OURA_KEYS = {
@@ -40,11 +44,14 @@ KNOWN_OURA_KEYS = {
     "hr",
     "hr_bpm",
     "ibi_ms",
+    "amplitude",
     "quality",
     "resting_heart_rate",
     "rhr",
     "rmssd",
+    "rmssd_ms",
     "hrv",
+    "interval_min",
     "spo2",
     "blood_oxygen",
     "temperature_delta",
@@ -53,6 +60,9 @@ KNOWN_OURA_KEYS = {
     "temps_c",
     "sleep_duration",
     "total_sleep_hours",
+    "duration_hours",
+    "bedtime_start_ds",
+    "bedtime_end_ds",
     "duration_sec",
     "total_sleep_sec",
     "steps",
@@ -122,8 +132,24 @@ def _classify_oura_event(
     """Return (metric_name, value, unit, value_min, value_max) for an Oura event."""
     ev_type = str(ev.get("event_type") or ev.get("type") or "").lower().strip()
 
+    rmssd_list = _as_float_list(ev.get("rmssd_ms"))
+    hrv = _first_float(ev, "rmssd", "hrv")
+    if rmssd_list or hrv is not None or ev_type in ("hrv", "hrv_rmssd", "hrv_event"):
+        mean_hrv = (
+            round(sum(rmssd_list) / len(rmssd_list), 4)
+            if rmssd_list
+            else (hrv if hrv is not None else _as_float(ev.get("value")))
+        )
+        return (
+            "hrv_rmssd",
+            mean_hrv,
+            "ms",
+            min(rmssd_list) if rmssd_list else None,
+            max(rmssd_list) if rmssd_list else None,
+        )
+
     hr_bpm = _as_float_list(ev.get("hr_bpm"))
-    if hr_bpm or ev_type == "green_ibi_quality_event":
+    if hr_bpm or ev_type in ("green_ibi_quality_event", "ibi_and_amplitude_event"):
         mean_hr = round(sum(hr_bpm) / len(hr_bpm), 4) if hr_bpm else _as_float(ev.get("value"))
         return (
             "heart_rate",
@@ -141,16 +167,12 @@ def _classify_oura_event(
     if rhr is not None or ev_type in ("resting_heart_rate", "rhr"):
         return "resting_heart_rate", (rhr if rhr is not None else _as_float(ev.get("value"))), "bpm", None, None
 
-    hrv = _first_float(ev, "rmssd", "hrv")
-    if hrv is not None or ev_type in ("hrv", "hrv_rmssd"):
-        return "hrv_rmssd", (hrv if hrv is not None else _as_float(ev.get("value"))), "ms", None, None
-
     spo2 = _first_float(ev, "spo2", "blood_oxygen")
     if spo2 is not None or ev_type == "spo2":
         return "spo2", (spo2 if spo2 is not None else _as_float(ev.get("value"))), "%", None, None
 
     temps_c = ev.get("temps_c")
-    if isinstance(temps_c, list) or ev_type == "temp_event":
+    if isinstance(temps_c, list) or ev_type in ("temp_event", "sleep_temp_event", "temp_period"):
         nums = _as_float_list(temps_c)
         mean_temp = round(sum(nums) / len(nums), 4) if nums else _as_float(ev.get("value"))
         return (
@@ -165,8 +187,8 @@ def _classify_oura_event(
     if temp is not None or "temp" in ev_type:
         return "skin_temperature_delta", (temp if temp is not None else _as_float(ev.get("value"))), "degC", None, None
 
-    sleep_hr = _first_float(ev, "sleep_duration", "total_sleep_hours")
-    if sleep_hr is not None or ev_type in ("sleep", "sleep_duration", "sleep_period"):
+    sleep_hr = _first_float(ev, "sleep_duration", "total_sleep_hours", "duration_hours")
+    if sleep_hr is not None or ev_type in ("sleep", "sleep_duration", "sleep_period", "bedtime_period"):
         val = sleep_hr
         if val is None:
             sec = _first_float(ev, "duration_sec", "total_sleep_sec")
@@ -229,7 +251,11 @@ def parse_oura_payload(
         ev_type = str(ev.get("event_type") or ev.get("type") or "").lower().strip()
         if ev_type in IGNORED_OURA_EVENT_TYPES:
             continue
-        if ev_type == "green_ibi_quality_event" and ev.get("hr_bpm") == []:
+        if ev_type in ("green_ibi_quality_event", "ibi_and_amplitude_event") and ev.get("hr_bpm") == []:
+            continue
+        if ev_type == "hrv_event" and ev.get("rmssd_ms") == []:
+            continue
+        if ev_type in ("temp_event", "sleep_temp_event", "temp_period") and ev.get("temps_c") == []:
             continue
 
         try:

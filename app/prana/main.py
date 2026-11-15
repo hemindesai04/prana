@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from prana.analyzer.briefing import run_scheduled_briefings
 from prana.config import Settings, load_settings
 from prana.db import bootstrap_users, create_pool
 from prana.ingestor.router import router as ingestor_router
@@ -51,9 +52,36 @@ def create_app(
                 coalesce=True,
                 misfire_grace_time=3600 * 6,
             )
+            scheduler.add_job(
+                run_scheduled_briefings,
+                trigger="cron",
+                hour=cfg.morning_briefing_hour,
+                minute=0,
+                args=[cfg.database_url, "morning", cfg],
+                id="morning_briefing_job",
+                replace_existing=True,
+                coalesce=True,
+                misfire_grace_time=3600,
+            )
+            scheduler.add_job(
+                run_scheduled_briefings,
+                trigger="cron",
+                hour=cfg.evening_briefing_hour,
+                minute=0,
+                args=[cfg.database_url, "evening", cfg],
+                id="evening_briefing_job",
+                replace_existing=True,
+                coalesce=True,
+                misfire_grace_time=3600,
+            )
             scheduler.start()
             app.state.scheduler = scheduler
-            logger.info("Started background scheduler (backup hour=%d)", cfg.backup_cron_hour)
+            logger.info(
+                "Started background scheduler (backup=%dh, briefings=%dh/%dh)",
+                cfg.backup_cron_hour,
+                cfg.morning_briefing_hour,
+                cfg.evening_briefing_hour,
+            )
 
         try:
             yield

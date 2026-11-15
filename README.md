@@ -1,6 +1,6 @@
 # Prana
 
-Self-hosted, multi-user health biomarker hub for **Raspberry Pi 4**. Ingests Apple Watch (via Health Auto Export) and Oura Ring 4 (via local BLE, no subscription required) into PostgreSQL, with automated backups and planned AI trend analysis + proactive notifications.
+Self-hosted, multi-user health biomarker hub for **Raspberry Pi 4**. Ingests Apple Watch (via Health Auto Export) and Oura Ring 4 (via local BLE, no subscription required) into PostgreSQL, with automated backups, twice-daily AI/evidence briefings, and Grafana cross-wearable dashboards.
 
 > See [ARCHITECTURE.md](ARCHITECTURE.md), [IMPLEMENTATION.md](IMPLEMENTATION.md), and [AGENTS.md](AGENTS.md) for system design, roadmap, and agent rules.
 
@@ -48,7 +48,7 @@ curl -H "X-Ingest-Token: <your user token>" http://localhost:9000/api/v1/stats
 ```bash
 docker compose --profile oura run --rm oura-ble oura --key-file /data/key.hex pair
 ```
-2. Start the hourly `oura-ble` sync service (`POST /api/v1/ingest/oura`):
+2. Start the `oura-ble` presence-triggered sync service (1-hour cooldown after each successful `POST /api/v1/ingest/oura` sync):
 ```bash
 docker compose --profile oura up -d --build oura-ble
 ```
@@ -69,8 +69,31 @@ docker compose --profile test rm -s -f db-test
 ---
 
 ## Ports
-- `9000` — Prana Ingestor API (`http://<PI_IP>:9000`)
-- `9300` — *(Reserved for Grafana in Phase 4)*
+- `9000` — Prana Ingestor & Analyzer API (`http://<PI_IP>:9000`)
+- `9300` — Grafana Visualization Dashboard (`http://localhost:9300`, via `--profile dashboard`)
+
+---
+
+## Visualization Dashboard (Grafana)
+Start the provisioned Grafana service alongside Prana using the read-only `prana_ro` role:
+```bash
+docker compose --profile dashboard up -d --build
+```
+Open `http://localhost:9300` (default credentials in `.env.example`: `admin` / `prana_admin`, change via `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) and view **Prana — Daily Health, Sleep & Recovery** (including separate Oura Ring vs Apple Watch series and daily `Oura − Apple Watch` delta charts).
+
+---
+
+## Daily Analysis & Briefings (08:00 & 22:00)
+Prana rolls up `daily_metrics`, evaluates physiological rules A–H into `insights`, and generates morning (`08:00`) and evening (`22:00`) briefings automatically (or manually anytime):
+```bash
+curl -X POST http://localhost:9000/api/v1/analysis/run \
+  -H "X-Ingest-Token: <your user token>" \
+  -H "Content-Type: application/json" \
+  -d '{"days_back": 60, "period": "both"}'
+
+curl -H "X-Ingest-Token: <your user token>" http://localhost:9000/api/v1/insights
+```
+To enable LLM-synthesized briefings via Google Gemini, add a Google AI Studio key to `.env` (`GEMINI_API_KEY=...`, default model `gemini-2.5-flash`). Without a key, Prana automatically generates deterministic evidence-backed briefings.
 
 ---
 

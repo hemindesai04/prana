@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, Optional
 
 from sqlalchemy import (
     BigInteger,
+    Date,
     DateTime,
     Double,
     ForeignKey,
@@ -29,6 +30,13 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
     ingest_token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     timezone: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'UTC'"))
+    date_of_birth: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    sex: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sleep_target_hours: Mapped[float] = mapped_column(
+        Double, nullable=False, server_default=text("7.5")
+    )
+    latest_vo2_max: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
+    sleep_debt_hours: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
     notification_config: Mapped[Dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
@@ -171,3 +179,93 @@ class BackupRun(Base):
     file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class DailyMetric(Base):
+    __tablename__ = "daily_metrics"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "day",
+            "canonical_metric",
+            "source",
+            "device",
+            name="uq_daily_metrics_key",
+        ),
+        Index("idx_daily_metrics_user_metric_day", "user_id", "canonical_metric", desc("day")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    canonical_metric: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    device: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    value: Mapped[float] = mapped_column(Double, nullable=False)
+    value_min: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
+    value_max: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
+    sample_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("1"))
+    unit: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    baseline_mean: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
+    baseline_sd: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
+    z_score: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
+    metadata_json: Mapped[Dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Insight(Base):
+    __tablename__ = "insights"
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", "rule_id", name="uq_insights_user_day_rule"),
+        Index("idx_insights_user_day", "user_id", desc("day")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    rule_id: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(Text, nullable=False)  # "info" | "watch" | "alert"
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    finding: Mapped[str] = mapped_column(Text, nullable=False)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[Dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Briefing(Base):
+    __tablename__ = "briefings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", "period", name="uq_briefings_user_day_period"),
+        Index("idx_briefings_user_day", "user_id", desc("day"), "period"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[str] = mapped_column(Text, nullable=False)  # "morning" | "evening"
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    action_items: Mapped[Any] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    metrics_snapshot: Mapped[Dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    model_used: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

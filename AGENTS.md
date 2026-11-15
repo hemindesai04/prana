@@ -21,10 +21,12 @@ For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.
 ## 2. Repository Map & Module Boundaries
 
 - `docker-compose.yml` — `db` (`postgres:18.7-alpine`) + `prana` (`:9000`, non-root UID 1000) + `test` profile (`db-test` + `tests`) with `json-file` log rotation (`10m` × 5).
-- `app/prana/models.py` & `app/alembic/` — SQLAlchemy 2.0 models and Alembic migrations (`users`, `raw_ingestions`, `biomarkers`, `workouts`, `ingestion_issues`, `backup_runs`), auto-upgraded on startup.
-- `db/init/01_roles.sql` — Creates the read-only `prana_ro` role for smoke tests and future dashboards.
+- `app/prana/models.py` & `app/alembic/` — SQLAlchemy 2.0 models and Alembic migrations (`users`, `raw_ingestions`, `biomarkers`, `workouts`, `ingestion_issues`, `backup_runs`, `daily_metrics`, `insights`, `briefings`), auto-upgraded on startup.
+- `db/init/01_roles.sql` — Creates the read-only `prana_ro` role for smoke tests and Grafana dashboards.
 - `app/prana/ingestor/` — HTTP routes, canonical metric registry, raw-first storage, & payload parsers (connectors talk to `prana` **only** via `/api/v1/ingest/*`).
-- `oura-ble/` — Containerized Oura Ring 4 BLE sync service (`--profile oura`, `Th0rgal/open_oura` + hourly `sync.py` posting to `/api/v1/ingest/oura`).
+- `app/prana/analyzer/` — Daily metric rollups (`rollup.py`), evidence-based rules A–H (`rules.py`), and Gemini/deterministic twice-daily briefings (`briefing.py`).
+- `grafana/` — Provisioned read-only Postgres datasource and daily health/briefings dashboard (`--profile dashboard`, `:9300`).
+- `oura-ble/` — Containerized Oura Ring 4 BLE sync service (`--profile oura`, `Th0rgal/open_oura` + presence-triggered `sync.py` with 1h cooldown posting to `/api/v1/ingest/oura`).
 - `app/prana/maintenance/` — Containerized scheduled `pg_dump -Fc` backups (`/backups`) and `pg_restore` helper.
 - `app/prana/logging_setup.py` — Structured JSON logger (`get_logger(__name__)`) to `stdout`.
 - `tests/` — Unit (`test_unit_*.py`), Postgres 18.7 integration (`test_flow_*.py`), and optional `prana_ro` read-only prod smoke tests (`test_prod_ro_smoke.py`).
@@ -36,7 +38,7 @@ For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.
 - **Multi-user isolation:** Every ingestion, query, and future analysis/notification must scope by `user_id` resolved from `X-Ingest-Token` (stored as SHA-256 in `users.ingest_token_hash`).
 - **Raw data preservation:** Always commit raw payloads into `raw_ingestions` (`JSONB`, deduplicated by `payload_sha256`) **before** normalization, and record parse/contract issues in `ingestion_issues` (`sos` / `warning`).
 - **Idempotency:** Upserts rely on `UNIQUE (user_id, source, device, metric_name, recorded_at)` and `UNIQUE (user_id, source, device, workout_type, started_at)`. Never remove these constraints.
-- **Port series `9xxx`:** `9000` = API, `9300` = future Grafana. Port `8xxx` is reserved (e.g., Home Assistant).
+- **Port series `9xxx`:** `9000` = API, `9300` = Grafana dashboard (`--profile dashboard`). Port `8xxx` is reserved (e.g., Home Assistant).
 - **Schema changes:** Always add an additive Alembic migration in `app/alembic/versions/` matching `app/prana/models.py`. Never edit applied migrations destructively.
 - **Single-worker requirement:** APScheduler runs in-process; never launch uvicorn with `--workers > 1`.
 - **Documentation sync:** For every change, review and update all affected docs in the same change (`ARCHITECTURE.md` for technical architecture, the HTTP API Endpoints table, ports, services, and schema—never add phase or implementation roadmap details to `ARCHITECTURE.md`; `README.md` for setup/usage/endpoints; `IMPLEMENTATION.md` for phase status; `AGENTS.md` for conventions). Static checks in the `tests` container enforce `ruff` linting and exact parity between FastAPI routes and `ARCHITECTURE.md`'s HTTP API Endpoints table.

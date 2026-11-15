@@ -1,0 +1,710 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Overview & Twice-Daily Briefings",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "noValue": "Not available",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2.0 },
+              { "color": "red", "value": 5.0 }
+            ]
+          },
+          "unit": "h"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT sleep_debt_hours AS \"14d Sleep Debt (hr)\" FROM users WHERE slug = ${user_slug:sqlstring};",
+          "refId": "A"
+        }
+      ],
+      "title": "14-Day Sleep Debt",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "noValue": "Not available",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "yellow", "value": 35.5 },
+              { "color": "green", "value": 41.0 }
+            ]
+          },
+          "unit": "ml/kg/min"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT latest_vo2_max AS \"Latest VO2max\" FROM users WHERE slug = ${user_slug:sqlstring};",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest VO2max",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "noValue": "Not available",
+          "unit": "ms"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time, AVG(dm.value) AS \"HRV SDNN\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'hrv_sdnn'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest HRV (SDNN)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "noValue": "Not available",
+          "unit": "bpm"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time, AVG(dm.value) AS \"Resting HR\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'resting_heart_rate'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Resting Heart Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left", "cellOptions": { "type": "auto", "wrapText": true } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "day" },
+            "properties": [{ "id": "custom.width", "value": 95 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "model_used" },
+            "properties": [{ "id": "custom.width", "value": 120 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 5 },
+      "id": 5,
+      "options": { "cellHeight": "lg", "showHeader": true },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT b.day, b.title, b.summary_markdown AS summary, b.action_items::text AS actions, b.model_used\nFROM briefings b\nJOIN users u ON u.id = b.user_id\nWHERE u.slug = ${user_slug:sqlstring} AND b.period = 'morning'\nORDER BY b.day DESC\nLIMIT 5;",
+          "refId": "A"
+        }
+      ],
+      "title": "Morning Briefing (08:00 — Sleep & Daily Readiness)",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left", "cellOptions": { "type": "auto", "wrapText": true } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "day" },
+            "properties": [{ "id": "custom.width", "value": 95 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "model_used" },
+            "properties": [{ "id": "custom.width", "value": 120 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 5 },
+      "id": 6,
+      "options": { "cellHeight": "lg", "showHeader": true },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT b.day, b.title, b.summary_markdown AS summary, b.action_items::text AS actions, b.model_used\nFROM briefings b\nJOIN users u ON u.id = b.user_id\nWHERE u.slug = ${user_slug:sqlstring} AND b.period = 'evening'\nORDER BY b.day DESC\nLIMIT 5;",
+          "refId": "A"
+        }
+      ],
+      "title": "Evening Briefing (22:00 — Day So Far & Tonight's Target)",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
+      "id": 101,
+      "title": "Sleep Duration (Apple Watch vs Oura Separate) & 14-Day Sleep Debt",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "always",
+            "spanNulls": false
+          },
+          "decimals": 2,
+          "unit": "h"
+        }
+      },
+      "gridPos": { "h": 8, "w": 14, "x": 0, "y": 13 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       MAX(dm.value) AS \"Apple Watch Sleep (hr)\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'sleep_duration'\n  AND dm.source = 'apple_health'\n  AND dm.device NOT ILIKE '%oura%'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "AppleWatch"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       MAX(dm.value) AS \"Oura Ring Sleep (hr)\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'sleep_duration'\n  AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "Oura"
+        }
+      ],
+      "title": "Nightly Sleep Duration: Apple Watch vs Oura Ring (Missing Nights Excluded)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 18,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2.0 },
+              { "color": "red", "value": 5.0 }
+            ]
+          },
+          "unit": "h"
+        }
+      },
+      "gridPos": { "h": 8, "w": 10, "x": 14, "y": 13 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       dm.value AS \"14-Day Cumulative Sleep Debt\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'sleep_debt'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nORDER BY dm.day ASC;",
+          "refId": "Debt"
+        }
+      ],
+      "title": "14-Day Rolling Sleep Debt (hr)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
+      "id": 102,
+      "title": "Autonomic Recovery & Early Illness / Strain Signals",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "pointSize": 4, "spanNulls": false },
+          "decimals": 1,
+          "unit": "ms"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 22 },
+      "id": 9,
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       AVG(dm.value) AS \"Apple Watch HRV (SDNN)\",\n       AVG(dm.baseline_mean) AS \"SDNN 60d Baseline\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'hrv_sdnn'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "HRV"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       AVG(dm.value) AS \"Oura HRV (RMSSD)\",\n       AVG(dm.baseline_mean) AS \"RMSSD 60d Baseline\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'hrv_rmssd'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "HRV_Oura"
+        }
+      ],
+      "title": "HRV (SDNN & RMSSD) vs 60-Day Baseline",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "pointSize": 4, "spanNulls": false },
+          "decimals": 1,
+          "unit": "bpm"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "RHR_AppleWatch" },
+            "properties": [{ "id": "displayName", "value": "Apple Watch RHR (bpm)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "RHR_Oura" },
+            "properties": [{ "id": "displayName", "value": "Oura Ring RHR (bpm)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Baseline_60d" },
+            "properties": [
+              { "id": "displayName", "value": "60-Day Baseline (bpm)" },
+              { "id": "custom.lineStyle", "value": { "dash": [6, 4], "fill": "dash" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 22 },
+      "id": 10,
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       AVG(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') AS \"RHR_AppleWatch\",\n       AVG(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') AS \"RHR_Oura\",\n       AVG(dm.baseline_mean) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') AS \"Baseline_60d\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'resting_heart_rate'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "RHR"
+        }
+      ],
+      "title": "Resting Heart Rate vs 60-Day Baseline (bpm)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "pointSize": 4, "spanNulls": false },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Watch_Temp_Delta_C" },
+            "properties": [
+              { "id": "displayName", "value": "Apple Watch Temp Delta vs 60d (°C)" },
+              { "id": "unit", "value": "celsius" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Oura_Temp_Delta_C" },
+            "properties": [
+              { "id": "displayName", "value": "Oura Skin Temp Delta vs 60d (°C)" },
+              { "id": "unit", "value": "celsius" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 22 },
+      "id": 11,
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       AVG(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') AS \"Resp Rate — Watch (br/min)\",\n       AVG(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') AS \"Resp Rate — Oura (br/min)\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'respiratory_rate'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "Resp"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       AVG(CASE WHEN dm.canonical_metric = 'skin_temperature_delta' THEN dm.value ELSE (dm.value - dm.baseline_mean) END) AS \"Watch_Temp_Delta_C\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.source = 'apple_health'\n  AND dm.device NOT ILIKE '%oura%'\n  AND (\n    dm.canonical_metric = 'skin_temperature_delta'\n    OR (dm.canonical_metric = 'skin_temperature' AND dm.baseline_mean IS NOT NULL)\n  )\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "WatchTemp"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       AVG(CASE WHEN dm.canonical_metric = 'skin_temperature_delta' THEN dm.value ELSE (dm.value - dm.baseline_mean) END) AS \"Oura_Temp_Delta_C\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')\n  AND (\n    dm.canonical_metric = 'skin_temperature_delta'\n    OR (dm.canonical_metric = 'skin_temperature' AND dm.baseline_mean IS NOT NULL)\n  )\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "OuraTemp"
+        }
+      ],
+      "title": "Respiratory Rate (brpm) & Skin/Wrist Temperature (°C)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "id": 104,
+      "title": "Cross-Wearable Comparison: Oura Ring vs Apple Watch (Side-by-Side & Daily Delta)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "always",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Sleep_Delta_hr" },
+            "properties": [
+              { "id": "displayName", "value": "Sleep Duration Δ (Oura − Watch, hr)" },
+              { "id": "unit", "value": "h" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "HR_Delta_bpm" },
+            "properties": [
+              { "id": "displayName", "value": "Mean Heart Rate Δ (Oura − Watch, bpm)" },
+              { "id": "unit", "value": "bpm" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "RHR_Delta_bpm" },
+            "properties": [
+              { "id": "displayName", "value": "Resting HR Δ (Oura − Watch, bpm)" },
+              { "id": "unit", "value": "bpm" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Temp_Delta_C" },
+            "properties": [
+              { "id": "displayName", "value": "Skin Temp Δ (Oura − Watch, °C)" },
+              { "id": "unit", "value": "celsius" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "HRV_Delta_ms" },
+            "properties": [
+              { "id": "displayName", "value": "HRV Δ (Oura RMSSD − Watch SDNN, ms)" },
+              { "id": "unit", "value": "ms" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 31 },
+      "id": 16,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       (AVG(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') - AVG(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')) AS \"Sleep_Delta_hr\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'sleep_duration'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nHAVING COUNT(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') > 0\n   AND COUNT(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') > 0\nORDER BY dm.day ASC;",
+          "refId": "SleepDelta"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       (AVG(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') - AVG(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')) AS \"HR_Delta_bpm\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'heart_rate'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nHAVING COUNT(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') > 0\n   AND COUNT(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') > 0\nORDER BY dm.day ASC;",
+          "refId": "HRDelta"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       (AVG(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') - AVG(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')) AS \"RHR_Delta_bpm\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'resting_heart_rate'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nHAVING COUNT(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') > 0\n   AND COUNT(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') > 0\nORDER BY dm.day ASC;",
+          "refId": "RHRDelta"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       (AVG(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') - AVG(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')) AS \"Temp_Delta_C\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'skin_temperature'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nHAVING COUNT(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') > 0\n   AND COUNT(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') > 0\nORDER BY dm.day ASC;",
+          "refId": "TempDelta"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       (AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_rmssd' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_sdnn' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')) AS \"HRV_Delta_ms\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric IN ('hrv_rmssd', 'hrv_sdnn')\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nHAVING COUNT(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_rmssd' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) > 0\n   AND COUNT(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_sdnn' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') > 0\nORDER BY dm.day ASC;",
+          "refId": "HRVDelta"
+        }
+      ],
+      "title": "Oura vs Apple Watch — Daily Metric Differences (Oura − Apple Watch)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "always",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Watch_HR_bpm" },
+            "properties": [
+              { "id": "displayName", "value": "Apple Watch Mean HR (bpm)" },
+              { "id": "unit", "value": "bpm" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Oura_HR_bpm" },
+            "properties": [
+              { "id": "displayName", "value": "Oura Ring Mean HR (bpm)" },
+              { "id": "unit", "value": "bpm" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Watch_Temp_C" },
+            "properties": [
+              { "id": "displayName", "value": "Apple Watch Wrist Temp (°C)" },
+              { "id": "unit", "value": "celsius" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Oura_Temp_C" },
+            "properties": [
+              { "id": "displayName", "value": "Oura Ring Skin Temp (°C)" },
+              { "id": "unit", "value": "celsius" },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 31 },
+      "id": 17,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       AVG(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') AS \"Watch_HR_bpm\",\n       AVG(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') AS \"Oura_HR_bpm\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'heart_rate'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "MeanHR"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       AVG(dm.value) FILTER (WHERE dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%') AS \"Watch_Temp_C\",\n       AVG(dm.value) FILTER (WHERE dm.source = 'oura_ble' OR dm.device ILIKE '%oura%') AS \"Oura_Temp_C\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'skin_temperature'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "SkinTemp"
+        }
+      ],
+      "title": "Mean Heart Rate & Skin Temperature: Apple Watch vs Oura Ring",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "right", "cellOptions": { "type": "auto" } },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "day" },
+            "properties": [
+              { "id": "custom.align", "value": "left" },
+              { "id": "custom.width", "value": 95 }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "id": 18,
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT dm.day,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_sleep_hr,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_sleep_hr,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS sleep_diff_hr,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_hr_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_hr_bpm,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS hr_diff_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_sdnn' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_hrv_sdnn_ms,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_rmssd' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_hrv_rmssd_ms,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_rmssd' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_sdnn' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS hrv_diff_ms,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_rhr_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_rhr_bpm,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS rhr_diff_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_temp_c,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_temp_c,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS temp_diff_c\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric IN ('sleep_duration', 'heart_rate', 'hrv_sdnn', 'hrv_rmssd', 'resting_heart_rate', 'skin_temperature')\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day\nORDER BY dm.day DESC\nLIMIT 30;",
+          "refId": "CrossWearableTable"
+        }
+      ],
+      "title": "Daily Cross-Wearable Concordance & Difference Table (Oura vs Apple Watch)",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 48 },
+      "id": 103,
+      "title": "Cardiorespiratory Fitness, Training Load (ACWR), Activity & Evidence Insights",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "pointSize": 5, "showPoints": "always", "spanNulls": true },
+          "decimals": 1,
+          "unit": "ml/kg/min"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 49 },
+      "id": 12,
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time, AVG(dm.value) AS \"VO2max\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'vo2_max'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "VO2"
+        }
+      ],
+      "title": "VO2max Trend",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "pointSize": 4, "spanNulls": false },
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 49 },
+      "id": 13,
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time, dm.value AS \"ACWR (7d:28d)\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'acwr'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nORDER BY dm.day ASC;",
+          "refId": "ACWR"
+        }
+      ],
+      "title": "Training Load ACWR (0.8-1.3 Sweet Spot)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 65, "spanNulls": false },
+          "decimals": 0
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 49 },
+      "id": 14,
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT (dm.day::timestamp AT TIME ZONE u.timezone) AS time,\n       MAX(dm.value) AS \"Steps\"\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric = 'steps'\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day, u.timezone\nORDER BY dm.day ASC;",
+          "refId": "Steps"
+        }
+      ],
+      "title": "Daily Steps (Missing Days Excluded)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "prana-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left", "cellOptions": { "type": "auto", "wrapText": true } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "day" },
+            "properties": [{ "id": "custom.width", "value": 95 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "severity" },
+            "properties": [{ "id": "custom.width", "value": 80 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rule_id" },
+            "properties": [{ "id": "custom.width", "value": 165 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 57 },
+      "id": 15,
+      "options": { "cellHeight": "md", "showHeader": true },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT i.day, i.severity, i.rule_id, i.title, i.finding, i.action\nFROM insights i\nJOIN users u ON u.id = i.user_id\nWHERE u.slug = ${user_slug:sqlstring}\nORDER BY i.day DESC,\n         CASE i.severity WHEN 'alert' THEN 0 WHEN 'watch' THEN 1 ELSE 2 END,\n         i.rule_id ASC\nLIMIT 25;",
+          "refId": "Insights"
+        }
+      ],
+      "title": "Evidence-Based Physiological Insights & Personal Correlations (Rules A-H)",
+      "type": "table"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["prana", "biomarkers", "health"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "hemin", "value": "hemin" },
+        "datasource": { "type": "postgres", "uid": "prana-postgres" },
+        "definition": "SELECT slug FROM users ORDER BY id;",
+        "name": "user_slug",
+        "query": "SELECT slug FROM users ORDER BY id;",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-30d", "to": "now" },
+  "timezone": "browser",
+  "title": "Prana — Daily Health, Sleep & Recovery",
+  "uid": "prana-daily-health",
+  "version": 1
+}

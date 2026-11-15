@@ -42,6 +42,10 @@ services:
       BACKUP_DIR: /backups
       BACKUP_CRON_HOUR: ${BACKUP_CRON_HOUR:-3}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      MORNING_BRIEFING_HOUR: ${MORNING_BRIEFING_HOUR:-8}
+      EVENING_BRIEFING_HOUR: ${EVENING_BRIEFING_HOUR:-22}
     volumes:
       - ./backups:/backups
     ports:
@@ -80,6 +84,8 @@ services:
       TEST_DATABASE_URL: postgresql://prana:prana_test@db-test:5432/prana_test
       PRANA_RO_DATABASE_URL: ${PRANA_RO_DATABASE_URL:-}
     volumes:
+      - ./app/prana:/app/prana:ro
+      - ./app/alembic:/app/alembic:ro
       - ./tests:/tests:ro
       - ./oura-ble:/oura-ble:ro
       - ./ARCHITECTURE.md:/ARCHITECTURE.md:ro
@@ -101,6 +107,31 @@ services:
       - /var/run/dbus:/var/run/dbus
       - oura_data:/data
 
+  grafana:
+    image: grafana/grafana-oss:11.5.2
+    container_name: prana-grafana
+    profiles: ["dashboard"]
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "9300:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-prana_admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:9300
+      POSTGRES_DB: ${POSTGRES_DB:-prana}
+      POSTGRES_RO_PASSWORD: ${POSTGRES_RO_PASSWORD:-prana_ro}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
 volumes:
   pgdata:
   oura_data:
+  grafana_data:

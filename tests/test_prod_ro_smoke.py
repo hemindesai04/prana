@@ -17,8 +17,16 @@ def test_prod_readonly_smoke():
         assert at_head, f"Prod DB not at Alembic head: current={current}, head={head}"
 
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM users")
-            assert cur.fetchone()[0] >= 0
+            for tbl in (
+                "users",
+                "biomarkers",
+                "workouts",
+                "daily_metrics",
+                "insights",
+                "briefings",
+            ):
+                cur.execute(f"SELECT COUNT(*) FROM {tbl}")
+                assert cur.fetchone()[0] >= 0
 
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 cur.execute("INSERT INTO backup_runs (status) VALUES ('smoke_test')")

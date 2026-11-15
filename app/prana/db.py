@@ -65,15 +65,26 @@ def bootstrap_users(
                 raise ValueError(
                     f"Bootstrap token for '{slug}' conflicts with existing user '{conflict[0]}'"
                 )
+            cur.execute("SELECT 1 FROM users WHERE slug = %s", (slug,))
+            existed = cur.fetchone() is not None
+            dob_default = "1992-06-04" if slug == "hemin" else None
+            sex_default = "male" if slug == "hemin" else None
             cur.execute(
                 """
-                INSERT INTO users (slug, display_name, ingest_token_hash, timezone)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (slug) DO NOTHING
+                INSERT INTO users (
+                    slug, display_name, ingest_token_hash, timezone,
+                    date_of_birth, sex, sleep_target_hours
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, 7.5)
+                ON CONFLICT (slug) DO UPDATE SET
+                    date_of_birth = COALESCE(users.date_of_birth, EXCLUDED.date_of_birth),
+                    sex = COALESCE(users.sex, EXCLUDED.sex),
+                    sleep_target_hours = COALESCE(users.sleep_target_hours, EXCLUDED.sleep_target_hours)
                 """,
-                (slug, slug.capitalize(), digest, default_tz),
+                (slug, slug.capitalize(), digest, default_tz, dob_default, sex_default),
             )
-            inserted += cur.rowcount or 0
+            if not existed:
+                inserted += 1
     conn.commit()
     logger.info("Bootstrapped users (inserted=%d, configured=%d)", inserted, len(users))
     return inserted

@@ -16,6 +16,10 @@ class Settings:
     timezone: str
     max_request_bytes: int = 50 * 1024 * 1024
     run_migrations_on_startup: bool = True
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    morning_briefing_hour: int = 8
+    evening_briefing_hour: int = 22
 
 
 def parse_bootstrap_users(raw: str) -> List[Tuple[str, str]]:
@@ -54,4 +58,8 @@ def load_settings() -> Settings:
         max_request_bytes=int(os.getenv("MAX_REQUEST_BYTES", str(50 * 1024 * 1024))),
         run_migrations_on_startup=os.getenv("RUN_MIGRATIONS_ON_STARTUP", "true").lower()
         in ("1", "true", "yes"),
+        gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash",
+        morning_briefing_hour=int(os.getenv("MORNING_BRIEFING_HOUR", "8")),
+        evening_briefing_hour=int(os.getenv("EVENING_BRIEFING_HOUR", "22")),
     )

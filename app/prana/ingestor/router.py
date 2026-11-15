@@ -1,11 +1,18 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hmac
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from prana.analyzer.briefing import (
+    generate_briefing,
+    maybe_complete_morning_briefing_after_sleep_sync,
+)
+from prana.analyzer.rollup import compute_and_store_daily_metrics, resolve_user_tz
+from prana.analyzer.rules import evaluate_and_store_insights
+from prana.config import load_settings
 from prana.db import hash_token, resolve_user
 from prana.ingestor.apple_health import (
     normalize_and_store_apple_health,
@@ -25,6 +32,15 @@ class CreateUserRequest(BaseModel):
     display_name: str
     ingest_token: str
     timezone: str = "UTC"
+    date_of_birth: Optional[date] = None
+    sex: Optional[str] = None
+    sleep_target_hours: float = 7.5
+
+
+class AnalysisRunRequest(BaseModel):
+    days_back: int = Field(default=60, ge=1, le=730)
+    period: str = "morning"  # "morning" | "evening" | "both"
+    day: Optional[date] = None
 
 
 class ReprocessRequest(BaseModel):
@@ -259,15 +275,29 @@ def create_user(
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO users (slug, display_name, ingest_token_hash, timezone)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO users (
+                slug, display_name, ingest_token_hash, timezone,
+                date_of_birth, sex, sleep_target_hours
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (slug) DO UPDATE SET
                 display_name = EXCLUDED.display_name,
                 ingest_token_hash = EXCLUDED.ingest_token_hash,
-                timezone = EXCLUDED.timezone
+                timezone = EXCLUDED.timezone,
+                date_of_birth = COALESCE(EXCLUDED.date_of_birth, users.date_of_birth),
+                sex = COALESCE(EXCLUDED.sex, users.sex),
+                sleep_target_hours = EXCLUDED.sleep_target_hours
             RETURNING id
             """,
-            (body.slug, body.display_name, hash_token(body.ingest_token), body.timezone),
+            (
+                body.slug,
+                body.display_name,
+                hash_token(body.ingest_token),
+                body.timezone,
+                body.date_of_birth,
+                body.sex,
+                body.sleep_target_hours,
+            ),
         )
         user_id = int(cur.fetchone()[0])
     conn.commit()
@@ -275,8 +305,31 @@ def create_user(
     return {"status": "ok", "user_id": user_id, "slug": body.slug}
 
 
+def _refresh_after_ingest(
+    request: Request,
+    conn: Any,
+    user_id: int,
+    user_tz: str,
+    points_changed: int,
+    status: str,
+) -> None:
+    """Keep daily_metrics and insights fresh on ingest without invoking LLM per sync."""
+    if status == "duplicate" or points_changed <= 0:
+        return
+    try:
+        compute_and_store_daily_metrics(conn, user_id, days_back=14)
+        evaluate_and_store_insights(conn, user_id)
+        conn.commit()
+        settings = getattr(request.app.state, "settings", None) or load_settings()
+        maybe_complete_morning_briefing_after_sleep_sync(conn, user_id, user_tz, settings)
+    except Exception:
+        conn.rollback()
+        logger.exception("Post-ingest analytics refresh failed for user_id=%d", user_id)
+
+
 @router.post("/api/v1/ingest/apple-health")
 def ingest_apple_health(
+    request: Request,
     payload: Dict[str, Any],
     conn: Any = Depends(get_db_conn),
     user: Tuple[int, str] = Depends(require_user),
@@ -292,11 +345,20 @@ def ingest_apple_health(
         result["warning_count"],
         extra={"user_id": user_id, "source": "apple_health"},
     )
+    _refresh_after_ingest(
+        request,
+        conn,
+        user_id,
+        user_tz,
+        int(result["metrics_processed"]) + int(result["workouts_processed"]),
+        result["status"],
+    )
     return {"user_id": user_id, **result}
 
 
 @router.post("/api/v1/ingest/oura")
 def ingest_oura(
+    request: Request,
     payload: Dict[str, Any],
     conn: Any = Depends(get_db_conn),
     user: Tuple[int, str] = Depends(require_user),
@@ -311,11 +373,20 @@ def ingest_oura(
         result["warning_count"],
         extra={"user_id": user_id, "source": "oura_ble"},
     )
+    _refresh_after_ingest(
+        request,
+        conn,
+        user_id,
+        user_tz,
+        int(result["points_processed"]),
+        result["status"],
+    )
     return {"user_id": user_id, **result}
 
 
 @router.post("/api/v1/ingest/points")
 def ingest_points(
+    request: Request,
     payload: GenericIngestPayload,
     conn: Any = Depends(get_db_conn),
     user: Tuple[int, str] = Depends(require_user),
@@ -328,6 +399,14 @@ def ingest_points(
         result["points_processed"],
         result["warning_count"],
         extra={"user_id": user_id, "source": payload.source},
+    )
+    _refresh_after_ingest(
+        request,
+        conn,
+        user_id,
+        user_tz,
+        int(result["points_processed"]),
+        result["status"],
     )
     return {"user_id": user_id, "source": payload.source, **result}
 
@@ -497,4 +576,128 @@ def get_stats(
         "biomarkers": biomarkers,
         "workouts": workouts,
         "raw_ingestions": raw_ingestions,
+    }
+
+
+@router.post("/api/v1/analysis/run")
+def run_analysis(
+    request: Request,
+    body: Optional[AnalysisRunRequest] = None,
+    user: Tuple[int, str] = Depends(require_user),
+    conn: Any = Depends(get_db_conn),
+) -> Dict[str, Any]:
+    """Compute daily_metrics rollups, evaluate insights A-H, and generate briefings."""
+    user_id, _ = user
+    req_body = body or AnalysisRunRequest()
+    norm_period = req_body.period.strip().lower()
+    if norm_period not in {"morning", "evening", "both"}:
+        raise HTTPException(status_code=422, detail="period must be 'morning', 'evening', or 'both'")
+
+    settings = getattr(request.app.state, "settings", None) or load_settings()
+    rollup = compute_and_store_daily_metrics(conn, user_id, days_back=req_body.days_back)
+    insights = evaluate_and_store_insights(conn, user_id, target_day=req_body.day)
+    conn.commit()
+    periods = ["morning", "evening"] if norm_period == "both" else [norm_period]
+    briefings = [
+        generate_briefing(conn, user_id, period=p, settings=settings, day=req_body.day)
+        for p in periods
+    ]
+    conn.commit()
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "rollup": rollup,
+        "insights": insights,
+        "briefings": briefings,
+    }
+
+
+@router.get("/api/v1/insights")
+def get_insights(
+    days: int = Query(default=14, ge=1, le=90),
+    user: Tuple[int, str] = Depends(require_user),
+    conn: Any = Depends(get_db_conn),
+) -> Dict[str, Any]:
+    """Return user profile health metrics, active insights, and recent briefings."""
+    user_id, user_tz = user
+    tz = resolve_user_tz(user_tz)
+    since_day = datetime.now(tz).date() - timedelta(days=days)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT slug, display_name, date_of_birth, sex,
+                   sleep_target_hours, latest_vo2_max, sleep_debt_hours
+            FROM users
+            WHERE id = %s
+            """,
+            (user_id,),
+        )
+        u_row = cur.fetchone()
+        if not u_row:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cur.execute(
+            """
+            SELECT id, day, rule_id, severity, title, finding, action, evidence, created_at
+            FROM insights
+            WHERE user_id = %s AND day >= %s
+            ORDER BY day DESC,
+                     CASE severity WHEN 'alert' THEN 0 WHEN 'watch' THEN 1 ELSE 2 END,
+                     rule_id ASC
+            """,
+            (user_id, since_day),
+        )
+        insights = [
+            {
+                "id": r[0],
+                "day": str(r[1]),
+                "rule_id": r[2],
+                "severity": r[3],
+                "title": r[4],
+                "finding": r[5],
+                "action": r[6],
+                "evidence": r[7],
+                "created_at": r[8].isoformat(),
+            }
+            for r in cur.fetchall()
+        ]
+
+        cur.execute(
+            """
+            SELECT id, day, period, title, summary_markdown, action_items,
+                   metrics_snapshot, model_used, created_at
+            FROM briefings
+            WHERE user_id = %s AND day >= %s
+            ORDER BY day DESC, CASE period WHEN 'evening' THEN 0 ELSE 1 END
+            """,
+            (user_id, since_day),
+        )
+        briefings = [
+            {
+                "id": r[0],
+                "day": str(r[1]),
+                "period": r[2],
+                "title": r[3],
+                "summary_markdown": r[4],
+                "action_items": r[5],
+                "metrics_snapshot": r[6],
+                "model_used": r[7],
+                "created_at": r[8].isoformat(),
+            }
+            for r in cur.fetchall()
+        ]
+
+    return {
+        "user_id": user_id,
+        "profile": {
+            "slug": u_row[0],
+            "display_name": u_row[1],
+            "date_of_birth": str(u_row[2]) if u_row[2] else None,
+            "sex": u_row[3],
+            "sleep_target_hours": float(u_row[4]) if u_row[4] is not None else 7.5,
+            "latest_vo2_max": float(u_row[5]) if u_row[5] is not None else None,
+            "sleep_debt_hours": float(u_row[6]) if u_row[6] is not None else None,
+        },
+        "insights": insights,
+        "briefings": briefings,
     }
