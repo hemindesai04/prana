@@ -41,6 +41,69 @@
 - `biomarkers`: Normalized time-series (`user_id`, `source`, `metric_name`, `recorded_at`, `value`, `value_min`, `value_max`, `unit`, `metadata`).
 - `workouts`: Normalized workout sessions (`user_id`, `source`, `workout_type`, `started_at`, `ended_at`, `duration_sec`, `calories`, `metadata`).
 
+#### Entity-Relationship Schema
+```mermaid
+erDiagram
+    users ||--o{ raw_ingestions : "owns (ON DELETE CASCADE)"
+    users ||--o{ biomarkers : "owns (ON DELETE CASCADE)"
+    users ||--o{ workouts : "owns (ON DELETE CASCADE)"
+
+    users {
+        bigserial id PK
+        text slug UK
+        text display_name
+        text ingest_token_hash UK "SHA-256 of X-Ingest-Token"
+        text timezone
+        jsonb notification_config
+        timestamptz created_at
+    }
+
+    raw_ingestions {
+        bigserial id PK
+        bigint user_id FK
+        text source "apple_health | oura_ble | whoop | ultrahuman"
+        timestamptz received_at
+        jsonb payload "Immutable raw JSONB"
+    }
+
+    biomarkers {
+        bigserial id PK
+        bigint user_id FK
+        text source
+        text metric_name
+        timestamptz recorded_at
+        double value
+        double value_min
+        double value_max
+        text unit
+        jsonb metadata
+        timestamptz created_at
+    }
+
+    workouts {
+        bigserial id PK
+        bigint user_id FK
+        text source
+        text workout_type
+        timestamptz started_at
+        timestamptz ended_at
+        double duration_sec
+        double calories
+        jsonb metadata
+        timestamptz created_at
+    }
+```
+
+#### Constraints & Indexes
+- **Idempotency Keys:**
+  - `biomarkers`: `UNIQUE (user_id, source, metric_name, recorded_at)` — safe upserts on overlapping Health Auto Export / BLE syncs.
+  - `workouts`: `UNIQUE (user_id, source, workout_type, started_at)` — safe upserts on workout re-syncs.
+- **Query Indexes:**
+  - `idx_raw_ingestions_user_source_time (user_id, source, received_at DESC)`
+  - `idx_biomarkers_user_metric_time (user_id, metric_name, recorded_at DESC)`
+  - `idx_biomarkers_user_source_time (user_id, source, recorded_at DESC)`
+  - `idx_workouts_user_time (user_id, started_at DESC)`
+
 ### Module 4: Maintenance & Backups (`app/prana/maintenance/`)
 - Scheduled inside `prana` via APScheduler (`03:00` local time by default).
 - Runs `pg_dump` (compressed `.sql.gz`) into `/backups` with configurable retention (`BACKUP_RETENTION_DAYS`), ready for external SSD or `restic`/`rclone` sync.

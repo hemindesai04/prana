@@ -1,57 +1,56 @@
-# AGENTS.md — Guidelines for Coding Agents
+# AGENTS.md — Prana Repository Guide for Coding Agents
 
-This file defines the non-negotiable rules, module boundaries, and verification gates for any AI agent or developer working in `prana`. Read `ARCHITECTURE.md` and `IMPLEMENTATION.md` before making changes.
-
----
-
-## 1. Project Overview
-`prana` is a self-hosted, multi-user, containerized health biomarker hub designed to run on a **Raspberry Pi 4 (ARM64)** using **Docker Compose**. It ingests data from Apple Watch (via Health Auto Export), Oura Ring 4 (via local BLE, no subscription), and future wearables into PostgreSQL, with planned AI trend analysis and proactive notifications.
+Self-hosted, multi-user, containerized health biomarker hub targeting **Raspberry Pi 4 (ARM64)** via **Docker Compose**.
+For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.md). For phase scope, read [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ---
 
-## 2. Repository Map
-- `ARCHITECTURE.md` — System modules, container topology, HTTP/SQL contracts.
-- `IMPLEMENTATION.md` — Phased roadmap and acceptance criteria.
-- `docker-compose.yml` — Container definitions, port mappings (`9xxx` series), log rotation.
-- `db/init/01_schema.sql` — PostgreSQL multi-user schema (`users`, `raw_ingestions`, `biomarkers`, `workouts`).
-- `app/prana/` — Modular Python application (`config.py`, `logging_setup.py`, `db.py`, `ingestor/`, `maintenance/`).
-- `tests/` — Unit and end-to-end flow tests (`pytest`).
+## 1. Environment & Essential Commands
+
+- **Local Python (dev/tests only):** Use the project-local `.venv/` (never install into global Python or onto the Pi host OS).
+  - Run tests: `PYTHONPATH=app .venv/bin/pytest -v tests`
+  - Add runtime deps to `app/requirements.txt`; dev/test deps to `app/requirements-dev.txt`.
+- **Containerized Runtime (Raspberry Pi 4 / Docker):**
+  - Validate compose: `docker compose config -q`
+  - Start / rebuild: `docker compose up -d --build`
+  - Healthcheck: `curl -fsS http://localhost:9000/health`
 
 ---
 
-## 3. Strict Do's and Don'ts
+## 2. Repository Map & Module Boundaries
 
-### DO
-- **Keep everything containerized:** All services, schedulers, and backup jobs must run inside Docker (`docker-compose.yml`).
-- **Respect module boundaries:**
-  - Connectors (Apple Health, Oura BLE, future wearables) communicate with the core app **only** via the HTTP ingest contracts or internal module interfaces defined in `ARCHITECTURE.md`.
-  - Keep ingestion, storage, maintenance, analysis, and notification modules decoupled.
-- **Preserve multi-user isolation:** Every ingestion, query, and analysis path must scope data by `user_id`. Never create single-user global tables or bypass token-to-user resolution.
-- **Preserve raw data:** Always persist raw payloads in `raw_ingestions` (`JSONB`) before or alongside normalization.
-- **Write unit AND flow tests for every change:** Every new feature, bugfix, or endpoint must include unit tests and flow tests covering the scope of the change.
-- **Emit structured JSON logs:** Use `prana.logging_setup.get_logger(__name__)` so all logs go to `stdout` as structured JSON.
-- **Update docs when contracts change:** If you modify an API endpoint, DB table, or container port, update `ARCHITECTURE.md` and `README.md` in the same change.
-
-### DON'T
-- **Never delete data, volumes, or drop tables:** Never run `docker compose down -v`, `rm -rf pgdata`, `DROP TABLE`, or destructive SQL without explicit user confirmation.
-- **Never install runtime dependencies directly on the Pi host:** Do not instruct or script bare-metal `pip install`, `apt install`, or host `crontab` entries for app logic—put it in Docker.
-- **Never commit secrets or personal health data:** Never commit `.env`, API tokens, `auth_key`s, `backups/`, or exported `export.xml` / JSON health dumps.
-- **Never hardcode `8xxx` ports:** Port `8xxx` is reserved (e.g., Home Assistant). Prana uses the **`9xxx`** series (`9000` for API, `9300` for Grafana).
-- **Never bypass tests or report unverified passes:** Do not mark a task complete without running `pytest` and verifying all tests pass after the final edit.
+- `docker-compose.yml` — `db` (`postgres:16-alpine`) + `prana` (`:9000`) with `json-file` log rotation (`10m` × 5).
+- `db/init/01_schema.sql` — Multi-user schema (`users`, `raw_ingestions`, `biomarkers`, `workouts`).
+- `app/prana/ingestor/` — HTTP routes & payload parsers (connectors talk to `prana` **only** via `/api/v1/ingest/*`).
+- `app/prana/maintenance/` — Containerized scheduled `pg_dump` backups (`/backups`).
+- `app/prana/logging_setup.py` — Structured JSON logger (`get_logger(__name__)`) to `stdout`.
+- `tests/` — Unit (`test_unit_*.py`) and flow (`test_flow_*.py`) tests using `FakeConnection` / `TestClient`.
 
 ---
 
-## 4. Mandatory Verification Checklist
-Before finishing any task, run and observe passing output for:
-1. **Syntax & Tests:**
-   ```bash
-   pytest -v
-   ```
-2. **Compose Validation (when `docker-compose.yml` or `Dockerfile` changes):**
-   ```bash
-   docker compose config -q
-   ```
-3. **Runtime Healthcheck (when running containers):**
-   ```bash
-   curl -fsS http://localhost:9000/health
-   ```
+## 3. Critical Conventions & Gotchas
+
+- **Multi-user isolation:** Every ingestion, query, and future analysis/notification must scope by `user_id` resolved from `X-Ingest-Token` (stored as SHA-256 in `users.ingest_token_hash`).
+- **Raw data preservation:** Always insert raw payloads into `raw_ingestions` (`JSONB`) alongside normalized rows.
+- **Idempotency:** Upserts rely on `UNIQUE (user_id, source, metric_name, recorded_at)` and `UNIQUE (user_id, source, workout_type, started_at)`. Never remove these constraints.
+- **Port series `9xxx`:** `9000` = API, `9300` = future Grafana. Port `8xxx` is reserved (e.g., Home Assistant).
+- **Schema changes:** Never edit `db/init/01_schema.sql` destructively for an already-initialized DB; add additive migrations instead.
+- **Documentation sync:** Update `ARCHITECTURE.md` and `README.md` in the same change if you alter endpoints, ports, or tables.
+
+---
+
+## 4. Strict Boundaries (Do Not Do)
+
+- **Never delete data or volumes:** Never run `docker compose down -v`, `rm -rf pgdata`, `DROP TABLE`, or delete `backups/`.
+- **Never run bare-metal host installs:** No host `pip install`, `apt install`, or host `crontab` for app logic—everything runs inside Docker.
+- **Never commit secrets or health data:** `.env`, `.venv/`, `backups/`, `pgdata/`, `*.log`, and health exports must stay gitignored.
+- **Scope control:** Touch only files required for the requested task; do not refactor unrelated modules.
+
+---
+
+## 5. Mandatory Verification Protocol
+
+Before finishing any change:
+1. Write or update **both unit tests and flow tests** covering the scope of your change.
+2. Run `PYTHONPATH=app .venv/bin/pytest -v tests` and observe **all tests passing**.
+3. If `docker-compose.yml` or `Dockerfile` changed, run `docker compose config -q` (on a Docker-enabled host).
