@@ -39,7 +39,7 @@ For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.
 - **Port series `9xxx`:** `9000` = API, `9300` = future Grafana. Port `8xxx` is reserved (e.g., Home Assistant).
 - **Schema changes:** Always add an additive Alembic migration in `app/alembic/versions/` matching `app/prana/models.py`. Never edit applied migrations destructively.
 - **Single-worker requirement:** APScheduler runs in-process; never launch uvicorn with `--workers > 1`.
-- **Documentation sync:** For every change, review and update all affected docs in the same change (`ARCHITECTURE.md` for technical architecture, endpoints, ports, services, and schema—never add phase or implementation roadmap details to `ARCHITECTURE.md`; `README.md` for setup/usage/endpoints; `IMPLEMENTATION.md` for phase status; `AGENTS.md` for conventions).
+- **Documentation sync:** For every change, review and update all affected docs in the same change (`ARCHITECTURE.md` for technical architecture, the HTTP API Endpoints table, ports, services, and schema—never add phase or implementation roadmap details to `ARCHITECTURE.md`; `README.md` for setup/usage/endpoints; `IMPLEMENTATION.md` for phase status; `AGENTS.md` for conventions). Static checks in the `tests` container enforce `ruff` linting and exact parity between FastAPI routes and `ARCHITECTURE.md`'s HTTP API Endpoints table.
 
 ---
 

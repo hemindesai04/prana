@@ -82,6 +82,7 @@ services:
     volumes:
       - ./tests:/tests:ro
       - ./oura-ble:/oura-ble:ro
+      - ./ARCHITECTURE.md:/ARCHITECTURE.md:ro
 
   oura-ble:
     build: ./oura-ble

@@ -11,4 +11,4 @@ COPY alembic ./alembic
 
 ENV PYTHONPATH=/app
 
-CMD ["pytest", "-v", "-o", "cache_dir=/tmp/pytest_cache", "/tests"]
+CMD ["sh", "-c", "ruff check /app/prana /tests /oura-ble && pytest -v -o cache_dir=/tmp/pytest_cache /tests"]

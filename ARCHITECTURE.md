@@ -154,3 +154,18 @@ erDiagram
   1. Deterministic stats per `user_id` (7d vs 30d baselines, z-scores, cross-device divergence, lag correlations).
   2. Off-the-shelf LLM synthesis on detected anomalies.
   3. **Apprise** notification dispatch using each user's `notification_config`.
+
+---
+
+## 4. HTTP API Endpoints
+
+| Method | Path | Auth | Purpose |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/health` | None | Lightweight liveness check (`200` if DB reachable, `503` otherwise) |
+| `GET` | `/api/v1/status` | None (`X-Admin-Token` optional for `?detail=1`) | Aggregate health (`ok \| degraded \| critical`) across DB, migrations, SOS/warnings, backups, and scheduler |
+| `GET` | `/api/v1/stats` | `X-Ingest-Token` | Per-user biomarker, workout, and raw ingestion counts (`?source=` filter optional) |
+| `POST` | `/api/v1/users` | `X-Admin-Token` | Create or update a household user and their ingest token |
+| `POST` | `/api/v1/ingest/apple-health` | `X-Ingest-Token` | Raw-first ingestion and normalization for Health Auto Export JSON payloads |
+| `POST` | `/api/v1/ingest/oura` | `X-Ingest-Token` | Raw-first ingestion and normalization for `open_oura` BLE event payloads |
+| `POST` | `/api/v1/ingest/points` | `X-Ingest-Token` | Generic normalized point ingestion for standalone source connectors |
+| `POST` | `/api/v1/admin/reprocess` | `X-Admin-Token` | Re-run normalization on stored `raw_ingestions` (`apple_health` / `oura_ble`) |
