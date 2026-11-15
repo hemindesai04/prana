@@ -45,9 +45,10 @@ curl -H "X-Ingest-Token: <your user token>" http://localhost:9000/api/v1/stats
 ---
 
 ## Running Tests
+Run the full unit + PostgreSQL 18.7 integration suite inside Docker (zero host installs):
 ```bash
-cd app && pip install -r requirements-dev.txt
-PYTHONPATH=app pytest -v
+docker compose --profile test run --rm tests
+docker compose --profile test rm -s -f db-test
 ```
 
 ---
@@ -58,5 +59,14 @@ PYTHONPATH=app pytest -v
 
 ---
 
-## Backups
-Nightly `pg_dump` backups run automatically inside the `prana` container at `03:00` (configurable via `BACKUP_CRON_HOUR`) and write compressed `.sql.gz` files to `./backups`.
+## Backups & Restore
+Nightly `pg_dump -Fc` backups run automatically inside the `prana` container at `03:00` (configurable via `BACKUP_CRON_HOUR`) and write `0600` `.dump` files to `./backups`.
+
+To restore a backup into the running `db` container:
+```bash
+docker compose exec -T prana python -m prana.maintenance.backup restore /backups/<file>.dump
+```
+
+## Status & Monitoring
+- `GET /health` — Lightweight liveness check (`200` if DB reachable, `503` otherwise).
+- `GET /api/v1/status` — Overall health (`ok | degraded | critical`) across DB, migrations, ingestion SOS/warnings, failed raw rows, backups, and scheduler. Pass `?detail=1` with `X-Admin-Token` for open issue details.

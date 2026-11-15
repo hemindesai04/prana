@@ -15,8 +15,8 @@
 
 | Service | Image | Purpose | Phase |
 | :--- | :--- | :--- | :--- |
-| `db` | `postgres:16-alpine` | Primary multi-user PostgreSQL 16 database (`pgdata` volume) | 1A |
-| `prana` | `./app` (`python:3.12-slim`) | FastAPI ingestor (`:9000`), APScheduler (nightly `pg_dump` backups; later AI analyzer & notifier) | 1A |
+| `db` | `postgres:18.7-alpine` | Primary multi-user PostgreSQL 18 database (`pgdata` volume) | 1A |
+| `prana` | `./app` (`python:3.12-slim-bookworm`, UID 1000) | FastAPI ingestor (`:9000`), Alembic auto-migrations, APScheduler (nightly `pg_dump -Fc` backups; later AI analyzer & notifier) | 1A |
 | `oura-ble` | Profile `oura` | Local BLE sync (`Th0rgal/open_oura` or `LogosIsLife/open_ring`) via host D-Bus, pushing to `prana` | 1B |
 | `cloudflared` | Profile `tunnel` | Cloudflare Tunnel (`https://ingest.<domain>` → `http://prana:9000`) | 2 |
 | `grafana` | Profile `dashboard` (`:9300`) | Read-only SQL dashboards | 4 |
@@ -31,15 +31,18 @@
 - **Future (Whoop / Ultrahuman):** Standalone puller scripts → `POST /api/v1/ingest/points`
 
 ### Module 2: Ingestion & Normalization Gateway (`app/prana/ingestor/`)
-- Authenticates `X-Ingest-Token` against SHA-256 hashed tokens in `users`.
-- Persists raw payload to `raw_ingestions` (`JSONB`).
-- Upserts normalized records into `biomarkers` and `workouts` using `UNIQUE(user_id, source, metric_name, recorded_at)`.
+- Authenticates `X-Ingest-Token` against SHA-256 hashed tokens in `users` using a single pooled connection per request (`psycopg_pool`).
+- Persists raw payload first to `raw_ingestions` (`JSONB`, deduplicated by `payload_sha256`).
+- Bulk-upserts normalized records into `biomarkers` and `workouts` using `UNIQUE(user_id, source, device, metric_name, recorded_at)` and `UNIQUE(user_id, source, device, workout_type, started_at)`, mapping known metrics to `canonical_metric`.
+- Records contract drift (`warning`) and parse/persistence failures (`sos`) in `ingestion_issues`, surfaced via `GET /api/v1/status` and reprocessable via `POST /api/v1/admin/reprocess`.
 
-### Module 3: Storage Layer (`db/init/01_schema.sql`)
+### Module 3: Storage Layer (`app/prana/models.py` + `app/alembic/`)
 - `users`: `id`, `slug`, `display_name`, `ingest_token_hash`, `timezone`, `notification_config` (`JSONB`).
-- `raw_ingestions`: Immutable `JSONB` archive per `user_id` and `source`.
-- `biomarkers`: Normalized time-series (`user_id`, `source`, `metric_name`, `recorded_at`, `value`, `value_min`, `value_max`, `unit`, `metadata`).
-- `workouts`: Normalized workout sessions (`user_id`, `source`, `workout_type`, `started_at`, `ended_at`, `duration_sec`, `calories`, `metadata`).
+- `raw_ingestions`: Immutable `JSONB` archive per `user_id` and `source` with `payload_sha256`, `status`, `processed_at`, `error`.
+- `biomarkers`: Normalized time-series (`user_id`, `source`, `device`, `metric_name`, `canonical_metric`, `recorded_at`, `value`, `value_min`, `value_max`, `unit`, `metadata`).
+- `workouts`: Normalized workout sessions (`user_id`, `source`, `device`, `workout_type`, `started_at`, `ended_at`, `duration_sec`, `calories`, `metadata`).
+- `ingestion_issues`: Durable `sos` and `warning` contract/parse issue log linked to `raw_ingestions`.
+- `backup_runs`: Audit log of nightly `pg_dump -Fc` runs (`status`, `file_path`, `size_bytes`, `error`).
 
 #### Entity-Relationship Schema
 ```mermaid
@@ -96,8 +99,9 @@ erDiagram
 
 #### Constraints & Indexes
 - **Idempotency Keys:**
-  - `biomarkers`: `UNIQUE (user_id, source, metric_name, recorded_at)` — safe upserts on overlapping Health Auto Export / BLE syncs.
-  - `workouts`: `UNIQUE (user_id, source, workout_type, started_at)` — safe upserts on workout re-syncs.
+  - `raw_ingestions`: `UNIQUE (user_id, source, payload_sha256)` — exact re-sends are skipped cleanly.
+  - `biomarkers`: `UNIQUE (user_id, source, device, metric_name, recorded_at)` — safe upserts per device on overlapping Health Auto Export / BLE syncs.
+  - `workouts`: `UNIQUE (user_id, source, device, workout_type, started_at)` — safe upserts per device on workout re-syncs.
 - **Query Indexes:**
   - `idx_raw_ingestions_user_source_time (user_id, source, received_at DESC)`
   - `idx_biomarkers_user_metric_time (user_id, metric_name, recorded_at DESC)`
@@ -105,8 +109,8 @@ erDiagram
   - `idx_workouts_user_time (user_id, started_at DESC)`
 
 ### Module 4: Maintenance & Backups (`app/prana/maintenance/`)
-- Scheduled inside `prana` via APScheduler (`03:00` local time by default).
-- Runs `pg_dump` (compressed `.sql.gz`) into `/backups` with configurable retention (`BACKUP_RETENTION_DAYS`), ready for external SSD or `restic`/`rclone` sync.
+- Scheduled inside `prana` via APScheduler (`03:00` local time by default, with `coalesce=True` and 6h `misfire_grace_time`; requires single uvicorn worker).
+- Streams `pg_dump -Fc` (matching PostgreSQL 18 client) atomically to `/backups/prana_<stamp>.dump` with `0600` permissions and `BACKUP_RETENTION_DAYS` pruning, recording each run in `backup_runs`. Includes `restore` CLI via `pg_restore`.
 
 ### Module 5: Logging Infrastructure (`app/prana/logging_setup.py`)
 - Every module logs structured JSON (`timestamp`, `level`, `logger`, `message`, plus contextual fields) to `stdout`.

@@ -1,0 +1,14 @@
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+COPY prana ./prana
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
+
+ENV PYTHONPATH=/app
+
+CMD ["pytest", "-v", "-o", "cache_dir=/tmp/pytest_cache", "/tests"]

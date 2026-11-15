@@ -7,9 +7,10 @@ For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.
 
 ## 1. Environment & Essential Commands
 
-- **Local Python (dev/tests only):** Use the project-local `.venv/` (never install into global Python or onto the Pi host OS).
-  - Run tests: `PYTHONPATH=app .venv/bin/pytest -v tests`
-  - Add runtime deps to `app/requirements.txt`; dev/test deps to `app/requirements-dev.txt`.
+- **Local Python / Containerized Tests:** Never install into global Python or onto the Pi host OS.
+  - Run full unit + Postgres 18.7 integration suite: `docker compose --profile test run --rm tests && docker compose --profile test rm -s -f db-test`
+  - Optional local `.venv/` (if present): `PYTHONPATH=app .venv/bin/pytest -v tests`
+  - Add pinned runtime deps to `app/requirements.txt`; dev/test deps to `app/requirements-dev.txt`.
 - **Containerized Runtime (Raspberry Pi 4 / Docker):**
   - Validate compose: `docker compose config -q`
   - Start / rebuild: `docker compose up -d --build`
@@ -19,22 +20,24 @@ For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.
 
 ## 2. Repository Map & Module Boundaries
 
-- `docker-compose.yml` — `db` (`postgres:16-alpine`) + `prana` (`:9000`) with `json-file` log rotation (`10m` × 5).
-- `db/init/01_schema.sql` — Multi-user schema (`users`, `raw_ingestions`, `biomarkers`, `workouts`).
-- `app/prana/ingestor/` — HTTP routes & payload parsers (connectors talk to `prana` **only** via `/api/v1/ingest/*`).
-- `app/prana/maintenance/` — Containerized scheduled `pg_dump` backups (`/backups`).
+- `docker-compose.yml` — `db` (`postgres:18.7-alpine`) + `prana` (`:9000`, non-root UID 1000) + `test` profile (`db-test` + `tests`) with `json-file` log rotation (`10m` × 5).
+- `app/prana/models.py` & `app/alembic/` — SQLAlchemy 2.0 models and Alembic migrations (`users`, `raw_ingestions`, `biomarkers`, `workouts`, `ingestion_issues`, `backup_runs`), auto-upgraded on startup.
+- `db/init/01_roles.sql` — Creates the read-only `prana_ro` role for smoke tests and future dashboards.
+- `app/prana/ingestor/` — HTTP routes, canonical metric registry, raw-first storage, & payload parsers (connectors talk to `prana` **only** via `/api/v1/ingest/*`).
+- `app/prana/maintenance/` — Containerized scheduled `pg_dump -Fc` backups (`/backups`) and `pg_restore` helper.
 - `app/prana/logging_setup.py` — Structured JSON logger (`get_logger(__name__)`) to `stdout`.
-- `tests/` — Unit (`test_unit_*.py`) and flow (`test_flow_*.py`) tests using `FakeConnection` / `TestClient`.
+- `tests/` — Unit (`test_unit_*.py`), Postgres 18.7 integration (`test_flow_*.py`), and optional `prana_ro` read-only prod smoke tests (`test_prod_ro_smoke.py`).
 
 ---
 
 ## 3. Critical Conventions & Gotchas
 
 - **Multi-user isolation:** Every ingestion, query, and future analysis/notification must scope by `user_id` resolved from `X-Ingest-Token` (stored as SHA-256 in `users.ingest_token_hash`).
-- **Raw data preservation:** Always insert raw payloads into `raw_ingestions` (`JSONB`) alongside normalized rows.
-- **Idempotency:** Upserts rely on `UNIQUE (user_id, source, metric_name, recorded_at)` and `UNIQUE (user_id, source, workout_type, started_at)`. Never remove these constraints.
+- **Raw data preservation:** Always commit raw payloads into `raw_ingestions` (`JSONB`, deduplicated by `payload_sha256`) **before** normalization, and record parse/contract issues in `ingestion_issues` (`sos` / `warning`).
+- **Idempotency:** Upserts rely on `UNIQUE (user_id, source, device, metric_name, recorded_at)` and `UNIQUE (user_id, source, device, workout_type, started_at)`. Never remove these constraints.
 - **Port series `9xxx`:** `9000` = API, `9300` = future Grafana. Port `8xxx` is reserved (e.g., Home Assistant).
-- **Schema changes:** Never edit `db/init/01_schema.sql` destructively for an already-initialized DB; add additive migrations instead.
+- **Schema changes:** Always add an additive Alembic migration in `app/alembic/versions/` matching `app/prana/models.py`. Never edit applied migrations destructively.
+- **Single-worker requirement:** APScheduler runs in-process; never launch uvicorn with `--workers > 1`.
 - **Documentation sync:** Update `ARCHITECTURE.md` and `README.md` in the same change if you alter endpoints, ports, or tables.
 
 ---
@@ -52,5 +55,5 @@ For system topology and SQL/HTTP contracts, read [ARCHITECTURE.md](ARCHITECTURE.
 
 Before finishing any change:
 1. Write or update **both unit tests and flow tests** covering the scope of your change.
-2. Run `PYTHONPATH=app .venv/bin/pytest -v tests` and observe **all tests passing**.
+2. Run `docker compose --profile test run --rm tests && docker compose --profile test rm -s -f db-test` (or `PYTHONPATH=app .venv/bin/pytest -v tests` if running locally) and observe **all tests passing**.
 3. If `docker-compose.yml` or `Dockerfile` changed, run `docker compose config -q` (on a Docker-enabled host).

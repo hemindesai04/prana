@@ -6,18 +6,19 @@ x-logging: &default-logging
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18.7-alpine
     container_name: prana-db
     restart: unless-stopped
+    mem_limit: 1g
     logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-prana}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prana}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-prana}
       TZ: ${TZ:-UTC}
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./db/init/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - pgdata:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prana} -d ${POSTGRES_DB:-prana}"]
       interval: 10s
@@ -28,14 +29,15 @@ services:
     build: ./app
     container_name: prana-app
     restart: unless-stopped
+    mem_limit: 512m
     logging: *default-logging
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-prana}:${POSTGRES_PASSWORD:-prana}@db:5432/${POSTGRES_DB:-prana}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prana}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-prana}
       BOOTSTRAP_USERS: ${BOOTSTRAP_USERS:-}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
       TZ: ${TZ:-UTC}
       BACKUP_DIR: /backups
       BACKUP_CRON_HOUR: ${BACKUP_CRON_HOUR:-3}
@@ -49,6 +51,36 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  db-test:
+    image: postgres:18.7-alpine
+    profiles: ["test"]
+    tmpfs:
+      - /var/lib/postgresql
+    environment:
+      POSTGRES_USER: prana
+      POSTGRES_PASSWORD: prana_test
+      POSTGRES_DB: prana_test
+      TZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prana -d prana_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  tests:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.test
+    profiles: ["test"]
+    depends_on:
+      db-test:
+        condition: service_healthy
+    environment:
+      TEST_DATABASE_URL: postgresql://prana:prana_test@db-test:5432/prana_test
+      PRANA_RO_DATABASE_URL: ${PRANA_RO_DATABASE_URL:-}
+    volumes:
+      - ./tests:/tests:ro
 
 volumes:
   pgdata:

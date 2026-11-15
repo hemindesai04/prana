@@ -7,4 +7,7 @@ __pycache__/
 .venv/
 venv/
 *.log
+*.sql.gz
+*.dump
+exports/
 .DS_Store

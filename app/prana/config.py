@@ -14,19 +14,30 @@ class Settings:
     backup_cron_hour: int
     backup_retention_days: int
     timezone: str
+    max_request_bytes: int = 50 * 1024 * 1024
+    run_migrations_on_startup: bool = True
 
 
 def parse_bootstrap_users(raw: str) -> List[Tuple[str, str]]:
-    """Parse comma-separated `slug:token` pairs into a list of tuples."""
+    """Parse comma-separated `slug:token` pairs and reject duplicate tokens or slugs."""
     pairs: List[Tuple[str, str]] = []
+    seen_slugs: set[str] = set()
+    seen_tokens: set[str] = set()
     for item in raw.split(","):
         item = item.strip()
         if not item or ":" not in item:
             continue
         slug, token = item.split(":", 1)
         slug, token = slug.strip(), token.strip()
-        if slug and token:
-            pairs.append((slug, token))
+        if not slug or not token:
+            continue
+        if slug in seen_slugs:
+            raise ValueError(f"Duplicate slug in BOOTSTRAP_USERS: {slug}")
+        if token in seen_tokens:
+            raise ValueError(f"Duplicate ingest token in BOOTSTRAP_USERS for slug: {slug}")
+        seen_slugs.add(slug)
+        seen_tokens.add(token)
+        pairs.append((slug, token))
     return pairs
 
 
@@ -40,4 +51,7 @@ def load_settings() -> Settings:
         backup_cron_hour=int(os.getenv("BACKUP_CRON_HOUR", "3")),
         backup_retention_days=int(os.getenv("BACKUP_RETENTION_DAYS", "30")),
         timezone=os.getenv("TZ", "UTC"),
+        max_request_bytes=int(os.getenv("MAX_REQUEST_BYTES", str(50 * 1024 * 1024))),
+        run_migrations_on_startup=os.getenv("RUN_MIGRATIONS_ON_STARTUP", "true").lower()
+        in ("1", "true", "yes"),
     )
