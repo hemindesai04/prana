@@ -110,6 +110,15 @@ def test_parse_apple_health_realistic_hae_payload():
                     "end": "2026-11-14 07:35:00 -0800",
                     "duration": 2100,
                     "activeEnergyBurned": {"qty": 350.5, "units": "kcal"},
+                    "avgHeartRate": {"qty": 122, "units": "bpm"},
+                    "maxHeartRate": {"qty": 148, "units": "bpm"},
+                    "avgSpeed": {"qty": 4.8, "units": "km/hr"},
+                    "maxSpeed": {"qty": 6.2, "units": "km/hr"},
+                    "elevationUp": {"qty": 35, "units": "m"},
+                    "walkingAndRunningDistance": {"qty": 3.2, "units": "km"},
+                    "stepCadence": {"qty": 112, "units": "spm"},
+                    "isIndoor": False,
+                    "id": "w-123",
                     "source": {"name": "Apple Watch", "identifier": "com.apple.health.123"},
                 }
             ],
@@ -165,8 +174,35 @@ def test_parse_apple_health_drift_and_sos():
 def test_canonical_registry():
     assert resolve_canonical_metric("apple_health", "heart_rate_variability") == ("hrv_sdnn", "ms")
     assert resolve_canonical_metric("apple_health", "apple_exercise_time") == ("exercise_minutes", "min")
+    assert resolve_canonical_metric("apple_health", "apple_stand_time") == ("stand_minutes", "min")
     assert resolve_canonical_metric("oura_ble", "hrv") == ("hrv_rmssd", "ms")
     assert resolve_canonical_metric("apple_health", "unknown_x") is None
+
+
+def test_parse_apple_health_ignores_stand_hour_and_maps_stand_time():
+    payload = {
+        "data": {
+            "metrics": [
+                {
+                    "name": "apple_stand_hour",
+                    "units": "count",
+                    "data": [{"date": "2026-11-15 00:00:00 -0800", "qty": 1}],
+                },
+                {
+                    "name": "apple_stand_time",
+                    "units": "min",
+                    "data": [{"date": "2026-11-15 00:00:00 -0800", "qty": 6}],
+                },
+            ]
+        }
+    }
+    points, workouts, issues = parse_apple_health_payload(payload)
+    assert workouts == []
+    assert issues == []
+    assert len(points) == 1
+    assert points[0].metric_name == "apple_stand_time"
+    assert points[0].canonical_metric == "stand_minutes"
+    assert points[0].value == 6.0
 
 
 def test_json_formatter_outputs_valid_json_with_request_id():

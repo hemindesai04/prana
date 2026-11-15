@@ -16,6 +16,7 @@ CANONICAL_METRICS: Dict[Tuple[str, str], Tuple[str, str]] = {
     ("apple_health", "basal_energy_burned"): ("basal_calories", "kcal"),
     ("apple_health", "apple_sleeping_wrist_temperature"): ("skin_temperature_delta", "degC"),
     ("apple_health", "apple_exercise_time"): ("exercise_minutes", "min"),
+    ("apple_health", "apple_stand_time"): ("stand_minutes", "min"),
     ("apple_health", "weight_body_mass"): ("body_weight", "kg"),
     ("apple_health", "body_mass"): ("body_weight", "kg"),
     # Oura Ring BLE

@@ -19,6 +19,7 @@ logger = get_logger(__name__)
 
 NUMERIC_KEYS = ("qty", "avg", "value", "totalsleep", "asleep")
 EXCLUDED_EXTRA_KEYS = {"date", "qty", "avg", "min", "max", "value"}
+IGNORED_APPLE_HEALTH_METRICS = {"apple_stand_hour"}
 KNOWN_ENTRY_KEYS = {
     "date",
     "qty",
@@ -68,6 +69,24 @@ KNOWN_WORKOUT_KEYS = {
     "intensity",
     "speed",
     "pace",
+    "activeenergy",
+    "activities",
+    "avgheartrate",
+    "avgspeed",
+    "basalenergy",
+    "elevationup",
+    "estimatedeffortscore",
+    "events",
+    "heartraterecovery",
+    "id",
+    "isindoor",
+    "maxheartrate",
+    "maxspeed",
+    "segments",
+    "splits",
+    "stepcadence",
+    "totalenergy",
+    "walkingandrunningdistance",
 }
 
 
@@ -196,6 +215,9 @@ def parse_apple_health_payload(
                     details={"keys": list(metric.keys())},
                 )
             )
+            continue
+
+        if name.strip().lower() in IGNORED_APPLE_HEALTH_METRICS:
             continue
 
         resolved = resolve_canonical_metric("apple_health", name)
