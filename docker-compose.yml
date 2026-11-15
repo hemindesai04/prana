@@ -1,0 +1,54 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: prana-db
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-prana}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prana}
+      POSTGRES_DB: ${POSTGRES_DB:-prana}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prana} -d ${POSTGRES_DB:-prana}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prana:
+    build: ./app
+    container_name: prana-app
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prana}:${POSTGRES_PASSWORD:-prana}@db:5432/${POSTGRES_DB:-prana}
+      BOOTSTRAP_USERS: ${BOOTSTRAP_USERS:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      TZ: ${TZ:-UTC}
+      BACKUP_DIR: /backups
+      BACKUP_CRON_HOUR: ${BACKUP_CRON_HOUR:-3}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ./backups:/backups
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
