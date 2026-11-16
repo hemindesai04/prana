@@ -495,6 +495,44 @@ def test_analysis_rollup_insights_and_briefings_flow(client, db_conn):
     future_rules = {ins["rule_id"] for ins in future_run.json()["insights"]}
     assert "cross_device_sleep_gap" not in future_rules
 
+    # Existing Gemini briefing must NOT be overwritten by a subsequent deterministic fallback
+    from prana.analyzer.briefing import generate_briefing
+    from prana.config import Settings
+
+    with db_conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE briefings
+            SET model_used = 'gemini-3.5-flash-lite',
+                title = 'AI Preserved Evening Briefing'
+            WHERE user_id = %s AND day = %s AND period = 'evening'
+            """,
+            (uid, today),
+        )
+    db_conn.commit()
+    cfg_no_ai = Settings(
+        database_url=client.app.state.settings.database_url,
+        admin_token=client.app.state.settings.admin_token,
+        bootstrap_users=client.app.state.settings.bootstrap_users,
+        backup_dir=client.app.state.settings.backup_dir,
+        backup_cron_hour=client.app.state.settings.backup_cron_hour,
+        backup_retention_days=client.app.state.settings.backup_retention_days,
+        timezone="America/Los_Angeles",
+        gemini_api_key="",
+        gemini_model="gemini-3.5-flash-lite",
+    )
+    preserved = generate_briefing(db_conn, uid, "evening", cfg_no_ai, day=today)
+    db_conn.commit()
+    assert preserved["model_used"] == "gemini-3.5-flash-lite"
+    assert preserved["title"] == "AI Preserved Evening Briefing"
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "SELECT model_used, title FROM briefings WHERE user_id = %s AND day = %s AND period = 'evening'",
+            (uid, today),
+        )
+        b_row = cur.fetchone()
+        assert b_row == ("gemini-3.5-flash-lite", "AI Preserved Evening Briefing")
+
     # Multi-user isolation: guest sees zero insights and zero briefings
     guest_insights = client.get(
         "/api/v1/insights",

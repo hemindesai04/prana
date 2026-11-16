@@ -147,8 +147,8 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "day" },
-            "properties": [{ "id": "custom.width", "value": 95 }]
+            "matcher": { "id": "byName", "options": "generated_at" },
+            "properties": [{ "id": "custom.width", "value": 135 }]
           },
           {
             "matcher": { "id": "byName", "options": "model_used" },
@@ -162,7 +162,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT b.day, b.title, b.summary_markdown AS summary, b.action_items::text AS actions, b.model_used\nFROM briefings b\nJOIN users u ON u.id = b.user_id\nWHERE u.slug = ${user_slug:sqlstring} AND b.period = 'morning'\nORDER BY b.day DESC\nLIMIT 5;",
+          "rawSql": "SELECT to_char(b.created_at AT TIME ZONE u.timezone, 'YYYY-MM-DD HH24:MI') AS generated_at, b.title, b.summary_markdown AS summary, b.action_items::text AS actions, b.model_used\nFROM briefings b\nJOIN users u ON u.id = b.user_id\nWHERE u.slug = ${user_slug:sqlstring} AND b.period = 'morning'\nORDER BY b.day DESC, b.created_at DESC\nLIMIT 5;",
           "refId": "A"
         }
       ],
@@ -177,8 +177,8 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "day" },
-            "properties": [{ "id": "custom.width", "value": 95 }]
+            "matcher": { "id": "byName", "options": "generated_at" },
+            "properties": [{ "id": "custom.width", "value": 135 }]
           },
           {
             "matcher": { "id": "byName", "options": "model_used" },
@@ -192,7 +192,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT b.day, b.title, b.summary_markdown AS summary, b.action_items::text AS actions, b.model_used\nFROM briefings b\nJOIN users u ON u.id = b.user_id\nWHERE u.slug = ${user_slug:sqlstring} AND b.period = 'evening'\nORDER BY b.day DESC\nLIMIT 5;",
+          "rawSql": "SELECT to_char(b.created_at AT TIME ZONE u.timezone, 'YYYY-MM-DD HH24:MI') AS generated_at, b.title, b.summary_markdown AS summary, b.action_items::text AS actions, b.model_used\nFROM briefings b\nJOIN users u ON u.id = b.user_id\nWHERE u.slug = ${user_slug:sqlstring} AND b.period = 'evening'\nORDER BY b.day DESC, b.created_at DESC\nLIMIT 5;",
           "refId": "A"
         }
       ],
@@ -576,7 +576,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT dm.day,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_sleep_hr,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_sleep_hr,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS sleep_diff_hr,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_hr_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_hr_bpm,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS hr_diff_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_sdnn' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_hrv_sdnn_ms,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_rmssd' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_hrv_rmssd_ms,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_rmssd' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_sdnn' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS hrv_diff_ms,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_rhr_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_rhr_bpm,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS rhr_diff_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_temp_c,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_temp_c,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS temp_diff_c\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric IN ('sleep_duration', 'heart_rate', 'hrv_sdnn', 'hrv_rmssd', 'resting_heart_rate', 'skin_temperature')\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day\nORDER BY dm.day DESC\nLIMIT 30;",
+          "rawSql": "SELECT dm.day::text AS day,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_sleep_hr,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_sleep_hr,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'sleep_duration' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS sleep_diff_hr,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_hr_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_hr_bpm,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS hr_diff_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_sdnn' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_hrv_sdnn_ms,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_rmssd' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_hrv_rmssd_ms,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_rmssd' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'hrv_sdnn' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS hrv_diff_ms,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_rhr_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_rhr_bpm,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'resting_heart_rate' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS rhr_diff_bpm,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%')::numeric, 2)::double precision AS watch_temp_c,\n       ROUND(AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%'))::numeric, 2)::double precision AS oura_temp_c,\n       ROUND((AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND (dm.source = 'oura_ble' OR dm.device ILIKE '%oura%')) - AVG(dm.value) FILTER (WHERE dm.canonical_metric = 'skin_temperature' AND dm.source = 'apple_health' AND dm.device NOT ILIKE '%oura%'))::numeric, 2)::double precision AS temp_diff_c\nFROM daily_metrics dm\nJOIN users u ON u.id = dm.user_id\nWHERE u.slug = ${user_slug:sqlstring}\n  AND dm.canonical_metric IN ('sleep_duration', 'heart_rate', 'hrv_sdnn', 'hrv_rmssd', 'resting_heart_rate', 'skin_temperature')\n  AND dm.day >= ($__timeFrom()::date - 1)\n  AND dm.day <= ($__timeTo()::date + 1)\nGROUP BY dm.day\nORDER BY dm.day DESC\nLIMIT 30;",
           "refId": "CrossWearableTable"
         }
       ],
@@ -659,8 +659,8 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "day" },
-            "properties": [{ "id": "custom.width", "value": 95 }]
+            "matcher": { "id": "byName", "options": "generated_at" },
+            "properties": [{ "id": "custom.width", "value": 135 }]
           },
           {
             "matcher": { "id": "byName", "options": "severity" },
@@ -678,7 +678,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT i.day, i.severity, i.rule_id, i.title, i.finding, i.action\nFROM insights i\nJOIN users u ON u.id = i.user_id\nWHERE u.slug = ${user_slug:sqlstring}\nORDER BY i.day DESC,\n         CASE i.severity WHEN 'alert' THEN 0 WHEN 'watch' THEN 1 ELSE 2 END,\n         i.rule_id ASC\nLIMIT 25;",
+          "rawSql": "SELECT to_char(i.created_at AT TIME ZONE u.timezone, 'YYYY-MM-DD HH24:MI') AS generated_at, i.severity, i.rule_id, i.title, i.finding, i.action\nFROM insights i\nJOIN users u ON u.id = i.user_id\nWHERE u.slug = ${user_slug:sqlstring}\nORDER BY i.day DESC,\n         CASE i.severity WHEN 'alert' THEN 0 WHEN 'watch' THEN 1 ELSE 2 END,\n         i.rule_id ASC\nLIMIT 25;",
           "refId": "Insights"
         }
       ],

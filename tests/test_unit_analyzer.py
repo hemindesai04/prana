@@ -175,8 +175,40 @@ def test_briefing_gemini_and_deterministic_fallback(monkeypatch):
     assert gem["title"].startswith("Solid Readiness")
     assert captured_headers.get("X-goog-api-key") == "test-gemini-key"
 
+    monkeypatch.setattr("prana.analyzer.briefing._GEMINI_RETRY_DELAYS", (0.0, 0.0))
+
     def _fake_urlopen_err(_req, timeout=20):
         raise urllib.error.URLError("network down")
 
     monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen_err)
     assert _call_gemini_api(snapshot, cfg_with_key) is None
+
+    # Transient HTTP 503 retries once and succeeds on second attempt
+    retry_attempts = {"n": 0}
+
+    def _fake_urlopen_503_then_ok(req, timeout=20):
+        retry_attempts["n"] += 1
+        if retry_attempts["n"] == 1:
+            raise urllib.error.HTTPError(
+                req.full_url, 503, "Service Unavailable", None, io.BytesIO(b"")
+            )
+        return _fake_urlopen_ok(req, timeout=timeout)
+
+    monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen_503_then_ok)
+    gem_retry = _call_gemini_api(snapshot, cfg_with_key)
+    assert retry_attempts["n"] == 2
+    assert gem_retry is not None
+    assert gem_retry["model_used"] == "gemini-2.5-flash"
+
+    # Non-retryable HTTP 400 fails immediately without retrying
+    bad_attempts = {"n": 0}
+
+    def _fake_urlopen_400(req, timeout=20):
+        bad_attempts["n"] += 1
+        raise urllib.error.HTTPError(
+            req.full_url, 400, "Bad Request", None, io.BytesIO(b"")
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen_400)
+    assert _call_gemini_api(snapshot, cfg_with_key) is None
+    assert bad_attempts["n"] == 1

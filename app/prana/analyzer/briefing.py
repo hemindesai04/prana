@@ -1,5 +1,6 @@
 import json
 import statistics
+import time
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
@@ -13,6 +14,9 @@ from prana.config import Settings
 from prana.logging_setup import get_logger
 
 logger = get_logger(__name__)
+
+_RETRYABLE_HTTP_CODES = {408, 429, 500, 502, 503, 504}
+_GEMINI_RETRY_DELAYS = (1.5, 4.0)
 
 _SYSTEM_PROMPT = """You are Prana, a quantitative physiology & longevity briefing analyst.
 Analyze the user's JSON biomarker snapshot and evidence-based rule outputs using these strict clinical principles:
@@ -256,38 +260,72 @@ def _call_gemini_api(
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            raw = resp.read().decode("utf-8")
-        parsed = json.loads(raw)
-        candidates = parsed.get("candidates") or []
-        if not candidates:
-            logger.warning("Gemini returned no candidates")
+    total_attempts = len(_GEMINI_RETRY_DELAYS) + 1
+    for attempt in range(total_attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read().decode("utf-8")
+            parsed = json.loads(raw)
+            candidates = parsed.get("candidates") or []
+            if not candidates:
+                logger.warning("Gemini returned no candidates")
+                return None
+            parts = ((candidates[0].get("content") or {}).get("parts")) or []
+            text_out = "".join(str(p.get("text", "")) for p in parts).strip()
+            # Strip accidental markdown code fences if returned despite responseMimeType
+            if text_out.startswith("```"):
+                text_out = text_out.strip("`")
+                if text_out.lower().startswith("json"):
+                    text_out = text_out[4:].strip()
+            result = json.loads(text_out)
+            if not isinstance(result, dict):
+                return None
+            title = str(result.get("title") or "").strip()
+            summary = str(result.get("summary_markdown") or "").strip()
+            actions = result.get("action_items") or []
+            if not title or not summary:
+                return None
+            return {
+                "title": title[:160],
+                "summary_markdown": summary,
+                "action_items": [str(a).strip() for a in actions if str(a).strip()][:5],
+                "model_used": settings.gemini_model,
+            }
+        except urllib.error.HTTPError as exc:
+            if exc.code in _RETRYABLE_HTTP_CODES and attempt < len(_GEMINI_RETRY_DELAYS):
+                delay = _GEMINI_RETRY_DELAYS[attempt]
+                logger.warning(
+                    "Gemini API transient HTTP %d (attempt %d/%d), retrying in %.1fs: %s",
+                    exc.code,
+                    attempt + 1,
+                    total_attempts,
+                    delay,
+                    exc,
+                )
+                if delay > 0:
+                    time.sleep(delay)
+                continue
+            logger.warning("Gemini API briefing failed, using deterministic fallback: %s", exc)
             return None
-        parts = ((candidates[0].get("content") or {}).get("parts")) or []
-        text_out = "".join(str(p.get("text", "")) for p in parts).strip()
-        # Strip accidental markdown code fences if returned despite responseMimeType
-        if text_out.startswith("```"):
-            text_out = text_out.strip("`")
-            if text_out.lower().startswith("json"):
-                text_out = text_out[4:].strip()
-        result = json.loads(text_out)
-        if not isinstance(result, dict):
+        except (urllib.error.URLError, TimeoutError) as exc:
+            if attempt < len(_GEMINI_RETRY_DELAYS):
+                delay = _GEMINI_RETRY_DELAYS[attempt]
+                logger.warning(
+                    "Gemini API transient network error (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1,
+                    total_attempts,
+                    delay,
+                    exc,
+                )
+                if delay > 0:
+                    time.sleep(delay)
+                continue
+            logger.warning("Gemini API briefing failed, using deterministic fallback: %s", exc)
             return None
-        title = str(result.get("title") or "").strip()
-        summary = str(result.get("summary_markdown") or "").strip()
-        actions = result.get("action_items") or []
-        if not title or not summary:
+        except (json.JSONDecodeError, ValueError, KeyError) as exc:
+            logger.warning("Gemini API briefing failed, using deterministic fallback: %s", exc)
             return None
-        return {
-            "title": title[:160],
-            "summary_markdown": summary,
-            "action_items": [str(a).strip() for a in actions if str(a).strip()][:5],
-            "model_used": settings.gemini_model,
-        }
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, KeyError) as exc:
-        logger.warning("Gemini API briefing failed, using deterministic fallback: %s", exc)
-        return None
+    return None
 
 
 def _build_deterministic_briefing(snapshot: Dict[str, Any]) -> Dict[str, Any]:
@@ -442,13 +480,37 @@ def generate_briefing(
             VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
             ON CONFLICT (user_id, day, period)
             DO UPDATE SET
-                title = EXCLUDED.title,
-                summary_markdown = EXCLUDED.summary_markdown,
-                action_items = EXCLUDED.action_items,
-                metrics_snapshot = EXCLUDED.metrics_snapshot,
-                model_used = EXCLUDED.model_used,
-                created_at = NOW()
-            RETURNING id, created_at
+                title = CASE
+                    WHEN briefings.model_used <> 'deterministic' AND EXCLUDED.model_used = 'deterministic'
+                    THEN briefings.title
+                    ELSE EXCLUDED.title
+                END,
+                summary_markdown = CASE
+                    WHEN briefings.model_used <> 'deterministic' AND EXCLUDED.model_used = 'deterministic'
+                    THEN briefings.summary_markdown
+                    ELSE EXCLUDED.summary_markdown
+                END,
+                action_items = CASE
+                    WHEN briefings.model_used <> 'deterministic' AND EXCLUDED.model_used = 'deterministic'
+                    THEN briefings.action_items
+                    ELSE EXCLUDED.action_items
+                END,
+                metrics_snapshot = CASE
+                    WHEN briefings.model_used <> 'deterministic' AND EXCLUDED.model_used = 'deterministic'
+                    THEN briefings.metrics_snapshot
+                    ELSE EXCLUDED.metrics_snapshot
+                END,
+                model_used = CASE
+                    WHEN briefings.model_used <> 'deterministic' AND EXCLUDED.model_used = 'deterministic'
+                    THEN briefings.model_used
+                    ELSE EXCLUDED.model_used
+                END,
+                created_at = CASE
+                    WHEN briefings.model_used <> 'deterministic' AND EXCLUDED.model_used = 'deterministic'
+                    THEN briefings.created_at
+                    ELSE NOW()
+                END
+            RETURNING id, title, summary_markdown, action_items, model_used, created_at
             """,
             (
                 user_id,
@@ -461,7 +523,7 @@ def generate_briefing(
                 generated["model_used"],
             ),
         )
-        bid, created_at = cur.fetchone()
+        bid, r_title, r_summary, r_actions, r_model, created_at = cur.fetchone()
 
     logger.info(
         "Stored %s briefing id=%d for user_id=%d day=%s via %s",
@@ -469,16 +531,16 @@ def generate_briefing(
         bid,
         user_id,
         eval_day,
-        generated["model_used"],
+        r_model,
     )
     return {
         "id": int(bid),
         "day": str(eval_day),
         "period": norm_period,
-        "title": generated["title"],
-        "summary_markdown": generated["summary_markdown"],
-        "action_items": generated["action_items"],
-        "model_used": generated["model_used"],
+        "title": r_title,
+        "summary_markdown": r_summary,
+        "action_items": r_actions,
+        "model_used": r_model,
         "created_at": created_at.isoformat(),
     }
 
@@ -489,16 +551,35 @@ def maybe_complete_morning_briefing_after_sleep_sync(
     user_tz: str,
     settings: Settings,
 ) -> Optional[Dict[str, Any]]:
-    """Run the single morning AI briefing once sleep arrives if morning AI hasn't run with sleep."""
+    """Run the single morning AI briefing once sleep arrives, or recover evening AI briefing after 22:00."""
     if not settings.gemini_api_key.strip():
         return None
 
     tz = resolve_user_tz(user_tz)
     now_local = datetime.now(tz)
-    if not (settings.morning_briefing_hour <= now_local.hour < settings.evening_briefing_hour):
+    today = now_local.date()
+
+    if now_local.hour >= settings.evening_briefing_hour:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT model_used
+                FROM briefings
+                WHERE user_id = %s AND day = %s AND period = 'evening'
+                LIMIT 1
+                """,
+                (user_id, today),
+            )
+            ev_row = cur.fetchone()
+        if ev_row is None or ev_row[0] == "deterministic":
+            briefing = generate_briefing(conn, user_id, "evening", settings, day=today)
+            conn.commit()
+            return briefing
         return None
 
-    today = now_local.date()
+    if now_local.hour < settings.morning_briefing_hour:
+        return None
+
     with conn.cursor() as cur:
         cur.execute(
             """
