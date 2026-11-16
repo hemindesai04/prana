@@ -37,4 +37,4 @@
 
 ## Phase 4: Visualization Dashboard (Complete)
 - **Deliverables:**
-  - `grafana` (`--profile dashboard`, `grafana/grafana-oss:11.5.2`, port `9300`) with provisioned read-only Postgres datasource (`prana_ro`) and multi-user daily health dashboard (`grafana/dashboards/prana_daily_health.json`) displaying briefings, sleep debt, VO2max, separate Apple Watch vs Oura sleep curves, autonomic baselines, ACWR, and insights.
+  - `grafana` (`--profile dashboard`, `grafana/grafana-oss:11.5.2`, port `9300`) with provisioned read-only Postgres datasource (`prana_ro`) and multi-user daily health dashboard (`grafana/dashboards/prana_daily_health.json`) displaying briefings and insights with local `generated_at` timestamps, sleep debt, VO2max, separate Apple Watch vs Oura series (Sleep, HRV, RHR, Respiratory Rate, Mean HR, Skin Temp), cross-wearable `Oura − Apple Watch` daily delta charts and concordance table, autonomic baselines, and ACWR.
